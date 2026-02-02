@@ -1,0 +1,30 @@
+import { Router } from "express";
+import {userRouter} from "@/routes/users";
+import { authRouter } from "./auth";
+import { projectRouter } from "./project";
+import { teamRouter } from "./team";
+import { taskRouter } from "./tasks";
+import { rolePermissionRouter } from "./roles-permissions";
+import { materialRequestRouter } from "./material-requests";
+import { aiRouter } from "./Ai";
+import { boqRouter } from "./boq";
+import { filesRouter } from "./files";
+import { purchaseOrderRouter } from "./purchase-orders";
+import grnRouter from "./grn";
+import vendorRouter from "./vendors";
+
+export const router = Router();
+
+router.use("/users", userRouter);
+router.use("/auth", authRouter);
+router.use("/projects", projectRouter);
+router.use("/teams", teamRouter);
+router.use("/tasks", taskRouter);
+router.use("/roles-permissions", rolePermissionRouter);
+router.use("/material-requests", materialRequestRouter);
+router.use("/ai", aiRouter);
+router.use("/boq", boqRouter);
+router.use("/files", filesRouter);
+router.use("/purchase-orders", purchaseOrderRouter);
+router.use("/grn", grnRouter);
+router.use("/vendors", vendorRouter);

@@ -1,0 +1,381 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String     @id @default(cuid())
+  email           String     @unique
+  name            String
+  phone           String     @unique
+  gender          String
+  dateOfBirth     String?
+  status          Status     @default(ACTIVE)
+  createdAt       DateTime   @default(now())
+  Auth            Auth?
+  createdProjects Projects[] @relation("UserCreatedProjects")
+  managedProjects Projects[] @relation("UserManagedProjects")
+  labours         labours[]
+  Teams           Teams[]
+  TeamLead        Teams[]    @relation("TeamLead")
+  role            Role?      @relation(fields: [roleId], references: [id])
+  roleId          String?
+}
+
+model Auth {
+  id        String      @id @default(cuid())
+  userId    String      @unique
+  user      User        @relation(fields: [userId], references: [id])
+  login     String      @unique
+  password  String
+  token     String?
+  loginWith LoginMethod @default(EMAIL)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+}
+
+model labours {
+  id          String        @id @default(cuid())
+  name        String
+  phone       String?
+  email       String?
+  skills      String[]
+  experience  String?
+  status      Status        @default(ACTIVE)
+  addedbyId   String
+  addedBy     User          @relation(fields: [addedbyId], references: [id])
+  createdAt   DateTime      @default(now())
+  task        Tasks[]       @relation("assignedUserTask")
+  TeamPeoples TeamPeoples[]
+}
+
+model Projects {
+  id               String            @id @default(cuid())
+  createdById      String
+  createdBy        User              @relation("UserCreatedProjects", fields: [createdById], references: [id])
+  name             String
+  budget           String
+  location         String
+  projectId        String            @unique
+  teamId           String?           @unique
+  team             Teams?            @relation(fields: [teamId], references: [id])
+  description      String
+  startDate        DateTime
+  endDate          DateTime
+  status           ProjectStatus     @default(NOTSTARTED)
+  managerId        String
+  manager          User              @relation("UserManagedProjects", fields: [managerId], references: [id])
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  tasks            Tasks[]
+  materialRequests MaterialRequest[]
+  boqs             BOQ[]
+  files            ProjectFiles[]
+}
+
+model Teams {
+  id          String        @id @default(cuid())
+  name        String
+  description String
+  leadId      String
+  status      Status        @default(ACTIVE)
+  lead        User          @relation("TeamLead", fields: [leadId], references: [id])
+  createdById String
+  createdBy   User          @relation(fields: [createdById], references: [id])
+  TeamPeoples TeamPeoples[]
+  createdAt   DateTime      @default(now())
+  Projects    Projects?
+}
+
+model TeamPeoples {
+  id       String  @id @default(cuid())
+  teamId   String
+  team     Teams   @relation(fields: [teamId], references: [id])
+  labourId String
+  labour   labours @relation(fields: [labourId], references: [id])
+}
+
+model Tasks {
+  id           String     @id @default(cuid())
+  name         String
+  description  String
+  assignedToId String?
+  assignedTo   labours?   @relation("assignedUserTask", fields: [assignedToId], references: [id])
+  dueDate      DateTime
+  priority     Preiority  @default(LOW)
+  taskProgress Int        @default(0)
+  status       TaskStatus @default(NOTSTARTED)
+  projectId    String
+  project      Projects   @relation(fields: [projectId], references: [id])
+  attachments  String[]
+  createdById  String
+  subTasks     SubTasks[]
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+
+model SubTasks {
+  id          String     @id @default(cuid())
+  taskId      String
+  task        Tasks      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  status      TaskStatus @default(NOTSTARTED)
+  progress    Int        @default(0)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+model Role {
+  id          String           @id @default(cuid())
+  name        String           @unique
+  description String?
+  permissions RolePermission[]
+  users       User[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+model Permission {
+  id             String           @id @default(cuid())
+  name           String           @unique
+  description    String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  RolePermission RolePermission[]
+}
+
+model RolePermission {
+  id           String     @id @default(cuid())
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id])
+  permission   Permission @relation(fields: [permissionId], references: [id])
+}
+
+model MaterialRequest {
+  id             String                @id @default(cuid())
+  projectId      String
+  project        Projects              @relation(fields: [projectId], references: [id])
+  requestedBy    String
+  title          String
+  description    String?
+  status         MaterialReqStatus     @default(PENDING)
+  priority       Preiority             @default(MEDIUM)
+  items          MaterialRequestItem[]
+  purchaseOrders PurchaseOrder[]
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+}
+
+model MaterialRequestItem {
+  id                String          @id @default(cuid())
+  materialRequestId String
+  materialRequest   MaterialRequest @relation(fields: [materialRequestId], references: [id], onDelete: Cascade)
+  itemName          String
+  quantity          Float
+  unit              String
+  estimatedCost     Float?
+  remarks           String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+}
+
+model BOQ {
+  id             String    @id @default(cuid())
+  projectId      String
+  project        Projects  @relation(fields: [projectId], references: [id])
+  fileName       String
+  fileUrl        String
+  uploadedById   String?
+  status         BOQStatus @default(PENDING)
+  tasksGenerated Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model ProjectFiles {
+  id           String   @id @default(cuid())
+  projectId    String
+  project      Projects @relation(fields: [projectId], references: [id])
+  fileName     String
+  fileUrl      String
+  fileSize     Int
+  mimeType     String
+  uploadedById String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Vendor {
+  id             String          @id @default(cuid())
+  name           String
+  contactPerson  String?
+  phone          String?
+  email          String?
+  address        String?
+  city           String?
+  state          String?
+  country        String?
+  zipCode        String?
+  gstNumber      String?
+  panNumber      String?
+  status         VendorStatus    @default(ACTIVE)
+  rating         Float?
+  notes          String?
+  purchaseOrders PurchaseOrder[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+model PurchaseOrder {
+  id                String              @id @default(cuid())
+  poNumber          String              @unique
+  materialRequestId String
+  materialRequest   MaterialRequest     @relation(fields: [materialRequestId], references: [id])
+  vendorId          String?
+  vendor            Vendor?             @relation(fields: [vendorId], references: [id])
+  vendorName        String?
+  vendorContact     String?
+  vendorEmail       String?
+  vendorAddress     String?
+  status            PurchaseOrderStatus @default(DRAFT)
+  totalAmount       Float               @default(0)
+  notes             String?
+  expectedDelivery  DateTime?
+  createdById       String?
+  items             PurchaseOrderItem[]
+  grns              GRN[]
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+}
+
+model PurchaseOrderItem {
+  id              String        @id @default(cuid())
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  itemName        String
+  description     String?
+  quantity        Float
+  unit            String
+  unitPrice       Float
+  totalPrice      Float
+  grnItems        GRNItem[]
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+}
+
+model GRN {
+  id              String     @id @default(cuid())
+  grnNumber       String     @unique
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  receivedDate    DateTime   @default(now())
+  receivedBy      String
+  status          GRNStatus  @default(PENDING)
+  remarks         String?
+  items           GRNItem[]
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+}
+
+model GRNItem {
+  id                  String            @id @default(cuid())
+  grnId               String
+  grn                 GRN               @relation(fields: [grnId], references: [id], onDelete: Cascade)
+  purchaseOrderItemId String
+  purchaseOrderItem   PurchaseOrderItem @relation(fields: [purchaseOrderItemId], references: [id])
+  orderedQuantity     Float
+  receivedQuantity    Float
+  damagedQuantity     Float             @default(0)
+  pendingQuantity     Float
+  remarks             String?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+}
+
+enum LoginMethod {
+  EMAIL
+  PHONE
+}
+
+enum Preiority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum TaskStatus {
+  NOTSTARTED
+  INPROGRESS
+  COMPLETED
+  ACTIONREQUIRED
+  ONHOLD
+}
+
+enum Status {
+  ACTIVE
+  INACTIVE
+  BLOCKED
+  BUSY
+  ACTIONREQUIRED
+}
+
+enum ProjectStatus {
+  NOTSTARTED
+  INPROGRESS
+  PAUSED
+  COMPLETED
+  ACTIONREQUIRED
+  ONHOLD
+  CANCELLED
+}
+
+enum MaterialReqStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  ORDERED
+  DELIVERED
+  CANCELLED
+}
+
+enum BOQStatus {
+  PENDING
+  PROCESSING
+  PROCESSED
+  FAILED
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  SENT
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CANCELLED
+}
+
+enum GRNStatus {
+  PENDING
+  COMPLETED
+  PARTIALLY_RECEIVED
+  REJECTED
+}
+
+enum VendorStatus {
+  ACTIVE
+  INACTIVE
+  BLOCKED
+}
