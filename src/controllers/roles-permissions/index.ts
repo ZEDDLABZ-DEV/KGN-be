@@ -63,7 +63,7 @@ export const getRoleById = async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
 
     const role = await prisma.role.findUnique({
-      where: { id },
+      where: { id: id as string },
       include: {
         permissions: {
           include: {
@@ -98,7 +98,7 @@ export const updateRole = async (req: AuthRequest, res: Response) => {
     const { name, description } = req.body;
 
     const role = await prisma.role.update({
-      where: { id },
+      where: { id: id as string },
       data: {
         name,
         description,
@@ -119,18 +119,18 @@ export const deleteRole = async (req: AuthRequest, res: Response) => {
 
     // Check if role is assigned to any user
     const roleAssignedToUser = await prisma.user.findFirst({
-      where: { roleId: id },
+      where: { roleId: id as string },
     });
     if (roleAssignedToUser) return error(res, 'Role is assigned to a user', 400);
     
     // Check if role is assigned to any permission
     const roleAssignedToPermission = await prisma.rolePermission.findFirst({
-      where: { roleId: id },
+      where: { roleId: id as string },
     });
     if (roleAssignedToPermission) return error(res, 'Role is assigned to a permission', 400);
 
     await prisma.role.delete({
-      where: { id },
+      where: { id: id as string },
     });
 
     return success(res, 'Role deleted successfully');

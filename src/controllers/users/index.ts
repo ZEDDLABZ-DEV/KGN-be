@@ -38,7 +38,7 @@ export const getUserById = async (req: AuthRequest, res: Response) => {
 
     const { id } = req.params;
     const user = await prisma.user.findUnique({
-      where: { id }
+      where: { id: id as string }
     });
     if (!user) return error(res, 'User not found', 404);
     return success(res, 'User fetched', user);
@@ -54,7 +54,7 @@ export const updateUser = async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
     
     const user = await prisma.user.update({
-      where: { id },
+      where: { id: id as string },
       data: req.body,
     });
     return created(res, 'User updated successfully', user);
@@ -103,7 +103,7 @@ export const getUserByRole = async (req: AuthRequest, res: Response) => {
   try {
     const { roleId } = req.params;
     const users = await prisma.user.findMany({
-      where: { roleId },
+      where: { roleId: roleId as string },
     });
     return success(res, 'Users fetched successfully', users);
   } catch (err) {
@@ -128,7 +128,7 @@ export const updateLabour = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const labour = await prisma.labours.update({
-      where: { id },
+      where: { id: id as string },
       data: {...req.body, addedbyId: req.userId as any },
     });
     return success(res, 'Labour updated successfully', labour);
@@ -146,7 +146,7 @@ export const deleteLabour = async (req: AuthRequest, res: Response) => {
     
     // Check if labour is in any team
     const labourInTeam = await prisma.teamPeoples.findFirst({
-      where: { labourId: id },
+      where: { labourId: id as string },
     });
     
     if (labourInTeam) {
@@ -154,7 +154,7 @@ export const deleteLabour = async (req: AuthRequest, res: Response) => {
     }
     
     const labour = await prisma.labours.delete({
-      where: { id },
+      where: { id: id as string },
     });
     return success(res, 'Labour deleted successfully', labour);
   } catch (err) {

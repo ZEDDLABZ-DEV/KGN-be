@@ -120,7 +120,7 @@ export const getTaskById = async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
 
     const task = await prisma.tasks.findUnique({
-      where: { id },
+      where: { id: id as string },
       include: {
         assignedTo: {
           select: {
@@ -166,7 +166,7 @@ export const updateTask = async (req: AuthRequest, res: Response) => {
 
     // Check if task exists
     const existingTask = await prisma.tasks.findUnique({
-      where: { id },
+      where: { id: id as string },
     });
 
     if (!existingTask) {
@@ -196,7 +196,7 @@ export const updateTask = async (req: AuthRequest, res: Response) => {
     if (attachments !== undefined) updateData.attachments = attachments;
 
     const task = await prisma.tasks.update({
-      where: { id },
+      where: { id: id as string },
       data: updateData,
       include: {
         assignedTo: {
@@ -229,7 +229,7 @@ export const deleteTask = async (req: AuthRequest, res: Response) => {
 
     // Check if task exists
     const existingTask = await prisma.tasks.findUnique({
-      where: { id },
+      where: { id: id as string },
     });
 
     if (!existingTask) {
@@ -237,7 +237,7 @@ export const deleteTask = async (req: AuthRequest, res: Response) => {
     }
 
     await prisma.tasks.delete({
-      where: { id },
+      where: { id: id as string },
     });
 
     return success(res, 'Task deleted successfully', null);
@@ -325,7 +325,7 @@ export const getTasksByProjectId = async (req: AuthRequest, res: Response) => {
   try {
     const { projectId } = req.params;
     const tasks = await prisma.tasks.findMany({
-      where: { projectId },
+      where: { projectId: projectId as string },
       include: {
         assignedTo: {
           select: {

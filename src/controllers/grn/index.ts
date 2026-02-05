@@ -242,7 +242,7 @@ export const getGRNById = async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
 
     const grn = await prisma.gRN.findUnique({
-      where: { id },
+      where: { id: id as string },
       include: {
         items: {
           include: {
@@ -286,7 +286,7 @@ export const getGRNsByPurchaseOrder = async (req: AuthRequest, res: Response) =>
     const { purchaseOrderId } = req.params;
 
     const grns = await prisma.gRN.findMany({
-      where: { purchaseOrderId },
+      where: { purchaseOrderId: purchaseOrderId as string },
       include: {
         items: {
           include: {
@@ -315,7 +315,7 @@ export const getGRNsByProject = async (req: AuthRequest, res: Response) => {
       where: {
         purchaseOrder: {
           materialRequest: {
-            projectId,
+            projectId: projectId as string,
           },
         },
       },
@@ -360,7 +360,7 @@ export const updateGRNStatus = async (req: AuthRequest, res: Response) => {
     }
 
     const existingGRN = await prisma.gRN.findUnique({
-      where: { id },
+      where: { id: id as string },
       include: {
         purchaseOrder: true,
       },
@@ -371,7 +371,7 @@ export const updateGRNStatus = async (req: AuthRequest, res: Response) => {
     }
 
     const updatedGRN = await prisma.gRN.update({
-      where: { id },
+      where: { id: id as string },
       data: { status },
       include: {
         items: {
@@ -453,7 +453,7 @@ export const updateGRN = async (req: AuthRequest, res: Response) => {
     logger.info({ items, itemsType: typeof items, isArray: Array.isArray(items), length: items?.length }, 'Items in request');
 
     const existingGRN = await prisma.gRN.findUnique({
-      where: { id },
+      where: { id: id as string },
       include: {
         items: true,
         purchaseOrder: {
@@ -495,7 +495,7 @@ export const updateGRN = async (req: AuthRequest, res: Response) => {
           const previousGRNItems = await prisma.gRNItem.findMany({
             where: {
               purchaseOrderItemId: item.purchaseOrderItemId,
-              grnId: { not: id }, // Exclude current GRN
+              grnId: { not: id as string }, // Exclude current GRN
               grn: {
                 status: {
                   not: 'REJECTED',
@@ -536,7 +536,7 @@ export const updateGRN = async (req: AuthRequest, res: Response) => {
 
       // Delete existing items and create new ones
       await prisma.gRNItem.deleteMany({
-        where: { grnId: id },
+        where: { grnId: id as string },
       });
 
       updateData.items = {
@@ -561,7 +561,7 @@ export const updateGRN = async (req: AuthRequest, res: Response) => {
     }
 
     const updatedGRN = await prisma.gRN.update({
-      where: { id },
+      where: { id: id as string },
       data: updateData,
       include: {
         items: {
@@ -594,8 +594,9 @@ export const deleteGRN = async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
 
     const existingGRN = await prisma.gRN.findUnique({
-      where: { id },
+      where: { id: id as string },
       include: {
+        items: true,
         purchaseOrder: {
           include: {
             items: true,
@@ -614,7 +615,7 @@ export const deleteGRN = async (req: AuthRequest, res: Response) => {
     }
 
     await prisma.gRN.delete({
-      where: { id },
+      where: { id: id as string },
     });
 
     // Recalculate PO status
@@ -665,7 +666,7 @@ export const getGRNSummary = async (req: AuthRequest, res: Response) => {
     const { purchaseOrderId } = req.params;
 
     const purchaseOrder = await prisma.purchaseOrder.findUnique({
-      where: { id: purchaseOrderId },
+      where: { id: purchaseOrderId as string },
       include: {
         items: true,
         grns: {
@@ -684,14 +685,14 @@ export const getGRNSummary = async (req: AuthRequest, res: Response) => {
     }
 
     // Calculate summary for each item
-    const summary = purchaseOrder.items.map((poItem) => {
-      const totalReceived = purchaseOrder.grns.reduce((sum, grn) => {
-        const grnItem = grn.items.find((i) => i.purchaseOrderItemId === poItem.id);
+    const summary = purchaseOrder.items.map((poItem: any) => {
+      const totalReceived = purchaseOrder.grns.reduce((sum: number, grn: any) => {
+        const grnItem = grn.items.find((i: any) => i.purchaseOrderItemId === poItem.id);
         return sum + (grnItem?.receivedQuantity || 0);
       }, 0);
 
-      const totalDamaged = purchaseOrder.grns.reduce((sum, grn) => {
-        const grnItem = grn.items.find((i) => i.purchaseOrderItemId === poItem.id);
+      const totalDamaged = purchaseOrder.grns.reduce((sum: number, grn: any) => {
+        const grnItem = grn.items.find((i: any) => i.purchaseOrderItemId === poItem.id);
         return sum + (grnItem?.damagedQuantity || 0);
       }, 0);
 

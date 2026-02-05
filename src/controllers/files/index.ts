@@ -134,7 +134,7 @@ export const getFilesByProject = async (req: AuthRequest, res: Response) => {
 
     // Verify project exists
     const project = await prisma.projects.findUnique({
-      where: { id: projectId },
+      where: { id: projectId as string },
     });
 
     if (!project) {
@@ -142,7 +142,7 @@ export const getFilesByProject = async (req: AuthRequest, res: Response) => {
     }
 
     const files = await prisma.projectFiles.findMany({
-      where: { projectId },
+      where: { projectId: projectId as string },
       orderBy: { createdAt: 'desc' },
     });
 
@@ -163,7 +163,7 @@ export const getFileById = async (req: AuthRequest, res: Response) => {
     }
 
     const file = await prisma.projectFiles.findUnique({
-      where: { id },
+      where: { id: id as string },
       include: {
         project: {
           select: {
@@ -200,7 +200,7 @@ export const downloadFile = async (req: AuthRequest, res: Response) => {
     }
 
     const file = await prisma.projectFiles.findUnique({
-      where: { id },
+      where: { id: id as string },
     });
 
     if (!file) {
@@ -229,7 +229,7 @@ export const deleteFile = async (req: AuthRequest, res: Response) => {
     }
 
     const file = await prisma.projectFiles.findUnique({
-      where: { id },
+      where: { id: id as string },
     });
 
     if (!file) {
@@ -241,7 +241,7 @@ export const deleteFile = async (req: AuthRequest, res: Response) => {
 
     // Delete from database
     await prisma.projectFiles.delete({
-      where: { id },
+      where: { id: id as string },
     });
 
     return success(res, 'File deleted successfully');

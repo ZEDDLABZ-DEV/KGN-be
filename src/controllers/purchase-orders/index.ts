@@ -213,7 +213,7 @@ export const getPurchaseOrderById = async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
 
     const purchaseOrder = await prisma.purchaseOrder.findUnique({
-      where: { id },
+      where: { id: id as string },
       include: {
         items: true,
         vendor: true,
@@ -250,7 +250,7 @@ export const getPurchaseOrdersByMaterialRequest = async (req: AuthRequest, res: 
     const { materialRequestId } = req.params;
 
     const purchaseOrders = await prisma.purchaseOrder.findMany({
-      where: { materialRequestId },
+      where: { materialRequestId: materialRequestId as string },
       include: {
         items: true,
       },
@@ -273,7 +273,7 @@ export const updatePurchaseOrder = async (req: AuthRequest, res: Response) => {
     const { vendorId, vendorName, vendorContact, vendorEmail, vendorAddress, notes, expectedDelivery, status } = req.body;
 
     const existingPO = await prisma.purchaseOrder.findUnique({
-      where: { id },
+      where: { id: id as string },
     });
 
     if (!existingPO) {
@@ -321,7 +321,7 @@ export const updatePurchaseOrder = async (req: AuthRequest, res: Response) => {
     if (status) updateData.status = status;
 
     const updatedPO = await prisma.purchaseOrder.update({
-      where: { id },
+      where: { id: id as string },
       data: updateData,
       include: {
         items: true,
@@ -364,7 +364,7 @@ export const updatePurchaseOrderStatus = async (req: AuthRequest, res: Response)
     }
 
     const existingPO = await prisma.purchaseOrder.findUnique({
-      where: { id },
+      where: { id: id as string },
     });
 
     if (!existingPO) {
@@ -372,7 +372,7 @@ export const updatePurchaseOrderStatus = async (req: AuthRequest, res: Response)
     }
 
     const updatedPO = await prisma.purchaseOrder.update({
-      where: { id },
+      where: { id: id as string },
       data: { status },
       include: {
         items: true,
@@ -401,7 +401,7 @@ export const deletePurchaseOrder = async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
 
     const existingPO = await prisma.purchaseOrder.findUnique({
-      where: { id },
+      where: { id: id as string },
     });
 
     if (!existingPO) {
@@ -414,7 +414,7 @@ export const deletePurchaseOrder = async (req: AuthRequest, res: Response) => {
     }
 
     await prisma.purchaseOrder.delete({
-      where: { id },
+      where: { id: id as string },
     });
 
     return success(res, 'Purchase order deleted successfully');
@@ -435,7 +435,7 @@ export const addItemToPurchaseOrder = async (req: AuthRequest, res: Response) =>
     }
 
     const existingPO = await prisma.purchaseOrder.findUnique({
-      where: { id },
+      where: { id: id as string },
     });
 
     if (!existingPO) {
@@ -450,7 +450,7 @@ export const addItemToPurchaseOrder = async (req: AuthRequest, res: Response) =>
 
     const newItem = await prisma.purchaseOrderItem.create({
       data: {
-        purchaseOrderId: id,
+        purchaseOrderId: id as string,
         itemName,
         description,
         quantity,
@@ -462,7 +462,7 @@ export const addItemToPurchaseOrder = async (req: AuthRequest, res: Response) =>
 
     // Update total amount
     await prisma.purchaseOrder.update({
-      where: { id },
+      where: { id: id as string },
       data: {
         totalAmount: existingPO.totalAmount + totalPrice,
       },
@@ -482,7 +482,7 @@ export const updatePurchaseOrderItem = async (req: AuthRequest, res: Response) =
     const { itemName, description, quantity, unit, unitPrice } = req.body;
 
     const existingItem = await prisma.purchaseOrderItem.findUnique({
-      where: { id: itemId },
+      where: { id: itemId as string },
       include: { purchaseOrder: true },
     });
 
@@ -513,7 +513,7 @@ export const updatePurchaseOrderItem = async (req: AuthRequest, res: Response) =
     }
 
     const updatedItem = await prisma.purchaseOrderItem.update({
-      where: { id: itemId },
+      where: { id: itemId as string },
       data: updateData,
     });
 
@@ -541,7 +541,7 @@ export const deletePurchaseOrderItem = async (req: AuthRequest, res: Response) =
     const { itemId } = req.params;
 
     const existingItem = await prisma.purchaseOrderItem.findUnique({
-      where: { id: itemId },
+      where: { id: itemId as string },
       include: { purchaseOrder: true },
     });
 
@@ -554,7 +554,7 @@ export const deletePurchaseOrderItem = async (req: AuthRequest, res: Response) =
     }
 
     await prisma.purchaseOrderItem.delete({
-      where: { id: itemId },
+      where: { id: itemId as string },
     });
 
     // Update purchase order total amount

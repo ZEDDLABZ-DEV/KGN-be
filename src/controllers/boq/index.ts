@@ -127,7 +127,7 @@ export const downloadBoq = async (req: AuthRequest, res: Response) => {
 
     // Find BOQ record
     const boq = await prisma.bOQ.findUnique({
-      where: { id },
+      where: { id: id as string },
       include: {
         project: {
           select: {
@@ -166,7 +166,7 @@ export const getBoqsByProject = async (req: AuthRequest, res: Response) => {
     }
 
     const boqs = await prisma.bOQ.findMany({
-      where: { projectId },
+      where: { projectId: projectId as string },
       orderBy: { createdAt: 'desc' },
       include: {
         project: {
@@ -195,7 +195,7 @@ export const getBoqById = async (req: AuthRequest, res: Response) => {
     }
 
     const boq = await prisma.bOQ.findUnique({
-      where: { id },
+      where: { id: id as string },
       include: {
         project: {
           select: {
@@ -228,7 +228,7 @@ export const getBoqFileByProject = async (req: AuthRequest, res: Response) => {
 
     // Verify project exists
     const project = await prisma.projects.findUnique({
-      where: { id: projectId },
+      where: { id: projectId as string },
     });
 
     if (!project) {
@@ -237,7 +237,7 @@ export const getBoqFileByProject = async (req: AuthRequest, res: Response) => {
 
     // Get the latest BOQ for this project
     const boq = await prisma.bOQ.findFirst({
-      where: { projectId },
+      where: { projectId: projectId as string },
       orderBy: { createdAt: 'desc' },
     });
 

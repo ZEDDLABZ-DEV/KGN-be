@@ -121,7 +121,7 @@ export const getMaterialRequestById = async (
     const { id } = req.params;
 
     const materialRequest = await prisma.materialRequest.findUnique({
-      where: { id },
+      where: { id: id as string },
       include: {
         items: true,
         project: {
@@ -155,7 +155,7 @@ export const getMaterialRequestsByProject = async (
     const { projectId } = req.params;
 
     const materialRequests = await prisma.materialRequest.findMany({
-      where: { projectId },
+      where: { projectId: projectId as string },
       include: {
         items: true,
       },
@@ -186,7 +186,7 @@ export const updateMaterialRequest = async (
 
     // Check if material request exists
     const existingRequest = await prisma.materialRequest.findUnique({
-      where: { id },
+      where: { id: id as string },
     });
 
     if (!existingRequest) {
@@ -201,7 +201,7 @@ export const updateMaterialRequest = async (
     if (status) updateData.status = status;
 
     const updatedRequest = await prisma.materialRequest.update({
-      where: { id },
+      where: { id: id as string },
       data: updateData,
       include: {
         items: true,
@@ -249,7 +249,7 @@ export const updateMaterialRequestStatus = async (
     }
 
     const updatedRequest = await prisma.materialRequest.update({
-      where: { id },
+      where: { id: id as string },
       data: { status },
       include: {
         items: true,
@@ -284,7 +284,7 @@ export const deleteMaterialRequest = async (
 
     // Check if material request exists
     const existingRequest = await prisma.materialRequest.findUnique({
-      where: { id },
+      where: { id: id as string },
     });
 
     if (!existingRequest) {
@@ -293,7 +293,7 @@ export const deleteMaterialRequest = async (
 
     // Delete material request (items will be cascade deleted)
     await prisma.materialRequest.delete({
-      where: { id },
+      where: { id: id as string },
     });
 
     return success(res, 'Material request deleted successfully', null);
@@ -318,7 +318,7 @@ export const addItemToMaterialRequest = async (
 
     // Check if material request exists
     const existingRequest = await prisma.materialRequest.findUnique({
-      where: { id },
+      where: { id: id as string },
     });
 
     if (!existingRequest) {
@@ -327,7 +327,7 @@ export const addItemToMaterialRequest = async (
 
     const newItem = await prisma.materialRequestItem.create({
       data: {
-        materialRequestId: id,
+        materialRequestId: id as string,
         itemName,
         quantity,
         unit,
@@ -354,7 +354,7 @@ export const updateMaterialRequestItem = async (
 
     // Check if item exists
     const existingItem = await prisma.materialRequestItem.findUnique({
-      where: { id: itemId },
+      where: { id: itemId as string },
     });
 
     if (!existingItem) {
@@ -370,7 +370,7 @@ export const updateMaterialRequestItem = async (
     if (remarks !== undefined) updateData.remarks = remarks;
 
     const updatedItem = await prisma.materialRequestItem.update({
-      where: { id: itemId },
+      where: { id: itemId as string },
       data: updateData,
     });
 
@@ -391,7 +391,7 @@ export const deleteMaterialRequestItem = async (
 
     // Check if item exists
     const existingItem = await prisma.materialRequestItem.findUnique({
-      where: { id: itemId },
+      where: { id: itemId as string },
     });
 
     if (!existingItem) {
@@ -399,7 +399,7 @@ export const deleteMaterialRequestItem = async (
     }
 
     await prisma.materialRequestItem.delete({
-      where: { id: itemId },
+      where: { id: itemId as string },
     });
 
     return success(res, 'Item deleted successfully', null);

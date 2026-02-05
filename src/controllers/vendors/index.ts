@@ -131,7 +131,7 @@ export const getVendorById = async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
 
     const vendor = await prisma.vendor.findUnique({
-      where: { id },
+      where: { id: id as string },
       include: {
         purchaseOrders: {
           select: {
@@ -196,7 +196,7 @@ export const updateVendor = async (req: AuthRequest, res: Response) => {
     } = req.body;
 
     const existingVendor = await prisma.vendor.findUnique({
-      where: { id },
+      where: { id: id as string },
     });
 
     if (!existingVendor) {
@@ -212,7 +212,7 @@ export const updateVendor = async (req: AuthRequest, res: Response) => {
             mode: 'insensitive',
           },
           id: {
-            not: id,
+            not: id as string,
           },
         },
       });
@@ -239,7 +239,7 @@ export const updateVendor = async (req: AuthRequest, res: Response) => {
     if (notes !== undefined) updateData.notes = notes;
 
     const updatedVendor = await prisma.vendor.update({
-      where: { id },
+      where: { id: id as string },
       data: updateData,
       include: {
         _count: {
@@ -274,7 +274,7 @@ export const updateVendorStatus = async (req: AuthRequest, res: Response) => {
     }
 
     const existingVendor = await prisma.vendor.findUnique({
-      where: { id },
+      where: { id: id as string },
     });
 
     if (!existingVendor) {
@@ -282,7 +282,7 @@ export const updateVendorStatus = async (req: AuthRequest, res: Response) => {
     }
 
     const updatedVendor = await prisma.vendor.update({
-      where: { id },
+      where: { id: id as string },
       data: { status },
       include: {
         _count: {
@@ -306,7 +306,7 @@ export const deleteVendor = async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
 
     const existingVendor = await prisma.vendor.findUnique({
-      where: { id },
+      where: { id: id as string },
       include: {
         _count: {
           select: {
@@ -330,7 +330,7 @@ export const deleteVendor = async (req: AuthRequest, res: Response) => {
     }
 
     await prisma.vendor.delete({
-      where: { id },
+      where: { id: id as string },
     });
 
     return success(res, 'Vendor deleted successfully');
@@ -346,7 +346,7 @@ export const getVendorStats = async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
 
     const vendor = await prisma.vendor.findUnique({
-      where: { id },
+      where: { id: id as string },
       include: {
         purchaseOrders: {
           include: {
@@ -372,23 +372,23 @@ export const getVendorStats = async (req: AuthRequest, res: Response) => {
 
     // Calculate statistics
     const totalPOs = vendor.purchaseOrders.length;
-    const totalAmount = vendor.purchaseOrders.reduce((sum, po) => sum + po.totalAmount, 0);
+    const totalAmount = vendor.purchaseOrders.reduce((sum: number, po: any) => sum + po.totalAmount, 0);
     
-    const completedPOs = vendor.purchaseOrders.filter((po) => po.status === 'RECEIVED').length;
+    const completedPOs = vendor.purchaseOrders.filter((po: any) => po.status === 'RECEIVED').length;
     const pendingPOs = vendor.purchaseOrders.filter(
-      (po) => po.status === 'SENT' || po.status === 'APPROVED'
+      (po: any) => po.status === 'SENT' || po.status === 'APPROVED'
     ).length;
     const partiallyReceivedPOs = vendor.purchaseOrders.filter(
-      (po) => po.status === 'PARTIALLY_RECEIVED'
+      (po: any) => po.status === 'PARTIALLY_RECEIVED'
     ).length;
 
     // Calculate on-time delivery percentage
-    const receivedPOs = vendor.purchaseOrders.filter((po) => po.status === 'RECEIVED');
-    const onTimeDeliveries = receivedPOs.filter((po) => {
+    const receivedPOs = vendor.purchaseOrders.filter((po: any) => po.status === 'RECEIVED');
+    const onTimeDeliveries = receivedPOs.filter((po: any) => {
       if (!po.expectedDelivery) return true;
       
       // Find the last GRN for this PO
-      const lastGRN = po.grns.reduce((latest, grn) => {
+      const lastGRN = po.grns.reduce((latest: any, grn: any) => {
         return !latest || new Date(grn.receivedDate) > new Date(latest.receivedDate)
           ? grn
           : latest;
@@ -407,9 +407,9 @@ export const getVendorStats = async (req: AuthRequest, res: Response) => {
     let totalItemsDelivered = 0;
     let totalDamagedItems = 0;
 
-    vendor.purchaseOrders.forEach((po) => {
-      po.grns.forEach((grn) => {
-        grn.items.forEach((item) => {
+    vendor.purchaseOrders.forEach((po: any) => {
+      po.grns.forEach((grn: any) => {
+        grn.items.forEach((item: any) => {
           totalItemsDelivered += item.receivedQuantity;
           totalDamagedItems += item.damagedQuantity;
         });

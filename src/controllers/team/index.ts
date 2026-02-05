@@ -105,7 +105,7 @@ export const getTeamMembers = async (req: AuthRequest, res: Response) => {
     const { teamId } = req.params;
     if (!teamId) return error(res, 'Team ID is required', 400);
     const members = await prisma.teamPeoples.findMany({
-      where: { teamId },
+      where: { teamId: teamId as string },
       include: {
         labour: {
           select: {
@@ -115,7 +115,7 @@ export const getTeamMembers = async (req: AuthRequest, res: Response) => {
         },
       },
     });
-    const teamMembers = members.map((member) => member.labour);
+    const teamMembers = members.map((member: any) => member.labour);
     return success(res, 'Team members fetched', teamMembers);
   }
   catch (err) {
@@ -130,7 +130,7 @@ export const deleteTeam = async (req: AuthRequest, res: Response) => {
     
     // Check if team is assigned to any project
     const teamWithProject = await prisma.projects.findFirst({
-      where: { teamId: id },
+      where: { teamId: id as string },
     });
     
     if (teamWithProject) {
@@ -138,7 +138,7 @@ export const deleteTeam = async (req: AuthRequest, res: Response) => {
     }
     
     const team = await prisma.teams.delete({
-      where: { id },
+      where: { id: id as string },
     });
     return success(res, 'Team deleted successfully', team);
   } catch (err) {
@@ -151,8 +151,8 @@ export const removeTeamMember = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { labourId } = req.body;
-    const teamMember = await prisma.teamPeoples.delete({
-      where: { id: labourId, teamId: id },
+    const teamMember = await prisma.teamPeoples.deleteMany({
+      where: { labourId: labourId as string, teamId: id as string },
     });
     return success(res, 'Team member removed successfully', teamMember);
   } catch (err) {
