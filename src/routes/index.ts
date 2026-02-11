@@ -12,6 +12,7 @@ import { filesRouter } from "./files";
 import { purchaseOrderRouter } from "./purchase-orders";
 import grnRouter from "./grn";
 import vendorRouter from "./vendors";
+import inventoryRouter from "./inventory";
 
 export const router = Router();
 
@@ -28,3 +29,4 @@ router.use("/files", filesRouter);
 router.use("/purchase-orders", purchaseOrderRouter);
 router.use("/grn", grnRouter);
 router.use("/vendors", vendorRouter);
+router.use("/inventory", inventoryRouter);

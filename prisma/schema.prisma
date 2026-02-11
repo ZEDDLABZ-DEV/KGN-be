@@ -81,6 +81,7 @@ model Projects {
   materialRequests MaterialRequest[]
   boqs             BOQ[]
   files            ProjectFiles[]
+  inventory        Inventory[]
 }
 
 model Teams {
@@ -304,6 +305,44 @@ model GRNItem {
   updatedAt           DateTime          @updatedAt
 }
 
+model Inventory {
+  id               String                 @id @default(cuid())
+  itemName         String
+  description      String?
+  category         String?
+  unit             String
+  quantity         Float                  @default(0)
+  minimumQuantity  Float?
+  location         String?
+  projectId        String?
+  project          Projects?              @relation(fields: [projectId], references: [id])
+  remarks          String?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  transactions     InventoryTransaction[]
+
+  @@index([itemName])
+  @@index([projectId])
+}
+
+model InventoryTransaction {
+  id               String                  @id @default(cuid())
+  inventoryId      String
+  inventory        Inventory               @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+  transactionType  InventoryTransactionType
+  quantity         Float
+  previousQuantity Float
+  newQuantity      Float
+  reference        String? // GRN number or manual entry reference
+  referenceId      String? // GRN ID or other reference ID
+  remarks          String?
+  performedBy      String?
+  createdAt        DateTime                @default(now())
+
+  @@index([inventoryId])
+  @@index([referenceId])
+}
+
 enum LoginMethod {
   EMAIL
   PHONE
@@ -378,4 +417,15 @@ enum VendorStatus {
   ACTIVE
   INACTIVE
   BLOCKED
+}
+
+enum InventoryTransactionType {
+  GRN_RECEIPT      // From GRN
+  MANUAL_ADD       // Manual addition
+  MANUAL_SUBTRACT  // Manual subtraction
+  MANUAL_ADJUST    // Manual adjustment
+  DAMAGE           // Damage/wastage
+  USAGE            // Used in project
+  RETURN           // Return to supplier
+  TRANSFER         // Transfer between projects/locations
 }

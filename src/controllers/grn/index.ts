@@ -2,6 +2,7 @@ import { AuthRequest } from '@/middleware/Auth';
 import { created, error, prisma, success } from '@/Utils';
 import { Response } from 'express';
 import logger from '@/config/logger';
+import { addGRNToInventory } from '@/controllers/inventory';
 
 // Generate unique GRN number
 const generateGRNNumber = async (): Promise<string> => {
@@ -167,6 +168,15 @@ export const createGRN = async (req: AuthRequest, res: Response) => {
         where: { id: purchaseOrderId },
         data: { status: 'PARTIALLY_RECEIVED' },
       });
+    }
+
+    // Add items to inventory automatically when GRN is completed
+    try {
+      await addGRNToInventory(grn.id, grnNumber, purchaseOrderId, req.userId as string);
+      logger.info(`GRN ${grnNumber} items added to inventory`);
+    } catch (invErr) {
+      logger.error(`Failed to add GRN ${grnNumber} to inventory: ${invErr}`);
+      // Don't fail the GRN creation if inventory update fails
     }
 
     return created(res, 'GRN created successfully', grn);
@@ -383,6 +393,22 @@ export const updateGRNStatus = async (req: AuthRequest, res: Response) => {
       },
     });
 
+    // Add items to inventory when status is updated to COMPLETED
+    if (status === 'COMPLETED' && existingGRN.status !== 'COMPLETED') {
+      try {
+        await addGRNToInventory(
+          existingGRN.id,
+          existingGRN.grnNumber,
+          existingGRN.purchaseOrderId,
+          req.userId as string
+        );
+        logger.info(`GRN ${existingGRN.grnNumber} items added to inventory on status update`);
+      } catch (invErr) {
+        logger.error(`Failed to add GRN to inventory: ${invErr}`);
+        // Don't fail the status update if inventory update fails
+      }
+    }
+
     // If GRN is rejected, we need to recalculate PO status
     if (status === 'REJECTED') {
       // Get all non-rejected GRNs for this PO
@@ -580,6 +606,21 @@ export const updateGRN = async (req: AuthRequest, res: Response) => {
         },
       },
     });
+
+    // Add items to inventory after GRN update
+    // Note: This will update quantities based on the new received quantities
+    try {
+      await addGRNToInventory(
+        existingGRN.id,
+        existingGRN.grnNumber,
+        existingGRN.purchaseOrderId,
+        req.userId as string
+      );
+      logger.info(`GRN ${existingGRN.grnNumber} inventory updated after GRN update`);
+    } catch (invErr) {
+      logger.error(`Failed to update inventory after GRN update: ${invErr}`);
+      // Don't fail the GRN update if inventory update fails
+    }
 
     return success(res, 'GRN updated successfully', updatedGRN);
   } catch (err: any) {
