@@ -129,6 +129,56 @@ export const createPassword = async(req:AuthRequest, res:Response) => {
   }
 }
 
+// Change admin password — only admin can access
+export const changeAdminPassword = async (req: AuthRequest, res: Response) => {
+  try {
+    // Only admin role can change admin password
+    if (req.role !== 'admin') {
+      return error(res, 'Only admin can change admin password', 403);
+    }
+
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return error(res, 'Current password and new password are required', 400);
+    }
+
+    if (newPassword.length < 6) {
+      return error(res, 'New password must be at least 6 characters', 400);
+    }
+
+    // Get admin's auth record
+    const auth = await prisma.auth.findUnique({
+      where: { userId: req.userId },
+    });
+
+    if (!auth) {
+      return error(res, 'Auth record not found', 404);
+    }
+
+    // Verify current password
+    const isValid = await bcrypt.compare(currentPassword, auth.password);
+    if (!isValid) {
+      return error(res, 'Current password is incorrect', 401);
+    }
+
+    // Hash and update new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    await prisma.auth.update({
+      where: { userId: req.userId },
+      data: { password: hashedPassword },
+    });
+
+    logger.info(`Admin password changed by user: ${req.userId}`);
+
+    return success(res, 'Admin password changed successfully');
+  } catch (err) {
+    logger.error(err);
+    return error(res, 'Failed to change admin password', 500);
+  }
+};
+
 export const me = async (req: AuthRequest, res: Response) => {
   try {
     

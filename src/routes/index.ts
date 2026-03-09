@@ -13,6 +13,7 @@ import { purchaseOrderRouter } from "./purchase-orders";
 import grnRouter from "./grn";
 import vendorRouter from "./vendors";
 import inventoryRouter from "./inventory";
+import dashboardRouter from "./dashboard";
 
 export const router = Router();
 
@@ -30,3 +31,4 @@ router.use("/purchase-orders", purchaseOrderRouter);
 router.use("/grn", grnRouter);
 router.use("/vendors", vendorRouter);
 router.use("/inventory", inventoryRouter);
+router.use("/dashboard", dashboardRouter);
