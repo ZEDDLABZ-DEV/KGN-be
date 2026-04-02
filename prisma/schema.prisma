@@ -55,8 +55,8 @@ model labours {
   addedbyId   String
   addedBy     User          @relation(fields: [addedbyId], references: [id])
   createdAt   DateTime      @default(now())
-  task        Tasks[]       @relation("assignedUserTask")
-  TeamPeoples TeamPeoples[]
+  assignedTasks Tasks[]     @relation("TaskLabourAssignment")
+  TeamPeoples   TeamPeoples[]
 }
 
 model Projects {
@@ -110,8 +110,7 @@ model Tasks {
   id           String     @id @default(cuid())
   name         String
   description  String
-  assignedToId String?
-  assignedTo   labours?   @relation("assignedUserTask", fields: [assignedToId], references: [id])
+  assignedTo   labours[]  @relation("TaskLabourAssignment")
   dueDate      DateTime
   priority     Preiority  @default(LOW)
   taskProgress Int        @default(0)

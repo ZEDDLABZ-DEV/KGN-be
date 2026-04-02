@@ -1,30 +1,62 @@
 import { AuthRequest } from '@/middleware/Auth';
 import { created, error, prisma, success } from '@/Utils';
+import { Preiority, TaskStatus } from '@prisma/client';
 import { Response } from 'express';
 import logger from '@/config/logger';
-import { uploadToS3 } from '@/Utils/aws';
+
+/** Normalize assignedToIds from JSON body or form-data (string / JSON array). Accepts legacy assignedToId as a single id. */
+function parseAssignedToIds(body: Record<string, unknown>): string[] | null {
+  const raw = body.assignedToIds ?? body.assignedToId;
+  if (raw === undefined || raw === null) return null;
+  if (Array.isArray(raw)) {
+    return [...new Set(raw.map(String).filter(Boolean))];
+  }
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (!trimmed) return [];
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      if (Array.isArray(parsed)) {
+        return [...new Set(parsed.map(String).filter(Boolean))];
+      }
+    } catch {
+      /* single id string */
+    }
+    return [trimmed];
+  }
+  return [String(raw)];
+}
+
+async function assertLabourIdsExist(ids: string[], res: Response): Promise<boolean> {
+  if (ids.length === 0) return true;
+  const count = await prisma.labours.count({ where: { id: { in: ids } } });
+  if (count !== ids.length) {
+    error(res, 'One or more assignee ids are invalid', 404);
+    return false;
+  }
+  return true;
+}
 
 // Create a new task
 export const createTask = async (req: AuthRequest, res: Response) => {
   try {
-
-    
-    // Extract fields from req.body (form-data sends fields as strings)
     const name = req.body.name;
     const description = req.body.description;
-    const assignedToId = req.body.assignedToId;
     const dueDate = req.body.dueDate;
     const priority = req.body.priority;
     const taskProgress = req.body.taskProgress ? parseInt(req.body.taskProgress) : undefined;
     const status = req.body.status;
     const projectId = req.body.projectId;
 
-    // Validate required fields
-    if (!name || !description || !assignedToId || !dueDate || !projectId) {
-      return error(res, 'Missing required fields: name, description, assignedToId, dueDate, projectId', 400);
+    const assignedToIds = parseAssignedToIds(req.body);
+
+    if (!name || !description || !dueDate || !projectId) {
+      return error(res, 'Missing required fields: name, description, dueDate, projectId', 400);
+    }
+    if (!assignedToIds || assignedToIds.length === 0) {
+      return error(res, 'assignedToIds must include at least one valid labour id', 400);
     }
 
-    // Verify that the project exists
     const project = await prisma.projects.findUnique({
       where: { id: projectId },
     });
@@ -33,23 +65,19 @@ export const createTask = async (req: AuthRequest, res: Response) => {
       return error(res, 'Project not found', 404);
     }
 
+    if (!(await assertLabourIdsExist(assignedToIds, res))) return;
 
-
-    const taskData: any = {
+    const taskData = {
       name,
       description,
-      assignedToId,
       dueDate: new Date(dueDate),
-      priority: priority || 'LOW',
-      status: status || 'NOTSTARTED',
+      priority: (priority as Preiority) || Preiority.LOW,
+      status: (status as TaskStatus) || TaskStatus.NOTSTARTED,
       createdById: req.userId as string,
       projectId,
+      assignedTo: { connect: assignedToIds.map((id) => ({ id })) },
+      ...(taskProgress !== undefined ? { taskProgress } : {}),
     };
-
-    // Only include taskProgress if explicitly provided
-    if (taskProgress !== undefined) {
-      taskData.taskProgress = taskProgress;
-    }
 
     const task = await prisma.tasks.create({
       data: taskData,
@@ -60,13 +88,6 @@ export const createTask = async (req: AuthRequest, res: Response) => {
             name: true,
           },
         },
-        // createdBy: {
-        //   select: {
-        //     id: true,
-        //     name: true,
-        //     email: true,
-        //   },
-        // },
       },
     });
 
@@ -94,13 +115,6 @@ export const getAllTasks = async (req: AuthRequest, res: Response) => {
             name: true,
           },
         },
-        // createdBy: {
-        //   select: {
-        //     id: true,
-        //     name: true,
-        //     email: true,
-        //   },
-        // },
       },
       orderBy: {
         createdAt: 'desc',
@@ -126,15 +140,8 @@ export const getTaskById = async (req: AuthRequest, res: Response) => {
           select: {
             id: true,
             name: true,
-            },
+          },
         },
-        // createdBy: {
-        //   select: {
-        //     id: true,
-        //     name: true,
-        //     email: true,
-        //   },
-        // },
       },
     });
 
@@ -153,18 +160,8 @@ export const getTaskById = async (req: AuthRequest, res: Response) => {
 export const updateTask = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const {
-      name,
-      description,
-      assignedToId,
-      dueDate,
-      priority,
-      taskProgress,
-      status,
-      attachments,
-    } = req.body;
+    const { name, description, dueDate, priority, taskProgress, status, attachments } = req.body;
 
-    // Check if task exists
     const existingTask = await prisma.tasks.findUnique({
       where: { id: id as string },
     });
@@ -173,27 +170,23 @@ export const updateTask = async (req: AuthRequest, res: Response) => {
       return error(res, 'Task not found', 404);
     }
 
-    // If assignedToId is being updated, verify the user exists
-    if (assignedToId) {
-      const assignedUser = await prisma.user.findUnique({
-        where: { id: assignedToId },
-      });
+    const assignedToIds = parseAssignedToIds(req.body);
 
-      if (!assignedUser) {
-        return error(res, 'Assigned user not found', 404);
-      }
+    if (assignedToIds !== null) {
+      if (!(await assertLabourIdsExist(assignedToIds, res))) return;
     }
 
-    // Prepare update data
-    const updateData: any = {};
+    const updateData: Record<string, unknown> = {};
     if (name !== undefined) updateData.name = name;
     if (description !== undefined) updateData.description = description;
-    if (assignedToId !== undefined) updateData.assignedToId = assignedToId;
     if (dueDate !== undefined) updateData.dueDate = new Date(dueDate);
     if (priority !== undefined) updateData.priority = priority;
     if (taskProgress !== undefined) updateData.taskProgress = taskProgress;
     if (status !== undefined) updateData.status = status;
     if (attachments !== undefined) updateData.attachments = attachments;
+    if (assignedToIds !== null) {
+      updateData.assignedTo = { set: assignedToIds.map((lid) => ({ id: lid })) };
+    }
 
     const task = await prisma.tasks.update({
       where: { id: id as string },
@@ -205,13 +198,6 @@ export const updateTask = async (req: AuthRequest, res: Response) => {
             name: true,
           },
         },
-        // createdBy: {
-        //   select: {
-        //     id: true,
-        //     name: true,
-        //     email: true,
-        //   },
-        // },
       },
     });
 
@@ -227,7 +213,6 @@ export const deleteTask = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
 
-    // Check if task exists
     const existingTask = await prisma.tasks.findUnique({
       where: { id: id as string },
     });
@@ -247,12 +232,15 @@ export const deleteTask = async (req: AuthRequest, res: Response) => {
   }
 };
 
-// Get tasks assigned to the current user
+// Get tasks assigned to the current user (match if user id equals any assigned labour id)
 export const getMyTasks = async (req: AuthRequest, res: Response) => {
   try {
+    const uid = req.userId as string;
     const tasks = await prisma.tasks.findMany({
       where: {
-        assignedToId: req.userId as string,
+        assignedTo: {
+          some: { id: uid },
+        },
       },
       include: {
         assignedTo: {
@@ -267,13 +255,6 @@ export const getMyTasks = async (req: AuthRequest, res: Response) => {
             name: true,
           },
         },
-        // createdBy: {
-        //   select: {
-        //     id: true,
-        //     name: true,
-        //     email: true,
-        //   },
-        // },
       },
       orderBy: {
         createdAt: 'desc',
@@ -301,13 +282,6 @@ export const getTasksCreatedByMe = async (req: AuthRequest, res: Response) => {
             name: true,
           },
         },
-        // createdBy: {
-        //   select: {
-        //     id: true,
-        //     name: true,
-        //     email: true,
-        //   },
-        // },
       },
       orderBy: {
         createdAt: 'desc',
