@@ -14,6 +14,7 @@ import grnRouter from "./grn";
 import vendorRouter from "./vendors";
 import inventoryRouter from "./inventory";
 import dashboardRouter from "./dashboard";
+import { attendanceRouter } from "./attendance";
 
 export const router = Router();
 
@@ -32,3 +33,4 @@ router.use("/grn", grnRouter);
 router.use("/vendors", vendorRouter);
 router.use("/inventory", inventoryRouter);
 router.use("/dashboard", dashboardRouter);
+router.use("/attendance", attendanceRouter);

@@ -57,6 +57,7 @@ model labours {
   createdAt   DateTime      @default(now())
   assignedTasks Tasks[]     @relation("TaskLabourAssignment")
   TeamPeoples   TeamPeoples[]
+  attendance    Attendance[]
 }
 
 model Projects {
@@ -73,8 +74,8 @@ model Projects {
   startDate        DateTime
   endDate          DateTime
   status           ProjectStatus     @default(NOTSTARTED)
-  managerId        String
-  manager          User              @relation("UserManagedProjects", fields: [managerId], references: [id])
+  managerId        String?
+  manager          User?             @relation("UserManagedProjects", fields: [managerId], references: [id])
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
   tasks            Tasks[]
@@ -82,6 +83,7 @@ model Projects {
   boqs             BOQ[]
   files            ProjectFiles[]
   inventory        Inventory[]
+  attendance       Attendance[]
 }
 
 model Teams {
@@ -118,10 +120,27 @@ model Tasks {
   projectId    String
   project      Projects   @relation(fields: [projectId], references: [id])
   attachments  String[]
+  updates      String[]   @default([])
   createdById  String
   subTasks     SubTasks[]
+  taskUpdates  TaskUpdate[]
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
+}
+
+model TaskUpdate {
+  id             String   @id @default(cuid())
+  taskId         String
+  task           Tasks    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  reportDate     DateTime
+  progressUpdate String
+  images         String[] @default([])
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([taskId])
+  @@index([reportDate])
 }
 
 model SubTasks {
@@ -342,6 +361,23 @@ model InventoryTransaction {
   @@index([referenceId])
 }
 
+model Attendance {
+  id          String           @id @default(cuid())
+  projectId   String
+  project     Projects         @relation(fields: [projectId], references: [id])
+  labourId    String
+  labour      labours          @relation(fields: [labourId], references: [id])
+  date        DateTime         @db.Date
+  status      AttendanceStatus
+  description String?
+  markedById  String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@unique([projectId, labourId, date])
+  @@index([projectId, date])
+}
+
 enum LoginMethod {
   EMAIL
   PHONE
@@ -416,6 +452,11 @@ enum VendorStatus {
   ACTIVE
   INACTIVE
   BLOCKED
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
 }
 
 enum InventoryTransactionType {

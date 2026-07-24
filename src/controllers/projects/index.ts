@@ -48,20 +48,72 @@ export const getMyProjects = async (req: AuthRequest, res: Response) => {
 
     if (projectType === 'managed') {
       where = {
-        managedId: req.userId as any,
+        managerId: req.userId as any,
       };
-    } else {
+    } else if (projectType === 'created') {
       where = {
         createdById: req.userId as any,
       };
+    } else {
+      where = {
+        OR: [
+          { managerId: req.userId as any },
+          { createdById: req.userId as any },
+        ],
+      };
     }
 
-    const projs = await prisma.projects.findMany(where);
+    const projs = await prisma.projects.findMany({
+      where,
+      include: {
+        manager: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        team: {
+          select: {
+            id: true,
+            name: true,
+            TeamPeoples: {
+              select: {
+                labour: {
+                  select: {
+                    id: true,
+                    name: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+        tasks: true,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
 
-    return success(200, 'My Projects Fetched', projs);
+    const projects = projs.map((project) => {
+      const completedTasks = project.tasks.filter(
+        (task) => task.status === TaskStatus.COMPLETED
+      ).length;
+      const totalTasks = project.tasks.length;
+
+      delete (project as any)?.tasks;
+      return {
+        ...project,
+        progress: totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0,
+        completedTasks,
+        totalTasks,
+      };
+    });
+
+    return success(res, 'My Projects Fetched', projects);
   } catch (err) {
     console.log(err);
-    return error(res, 'Failed to create project', 400);
+    return error(res, 'Failed to fetch my projects', 400);
   }
 };
 

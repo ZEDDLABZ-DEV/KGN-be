@@ -1,0 +1,23 @@
+# Local development only — does not affect production.
+# Start with: npm run db:up
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: kgn-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: kgnapp_user
+      POSTGRES_PASSWORD: KgnAppAksh1
+      POSTGRES_DB: kgnapp_db
+    volumes:
+      - kgn_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kgnapp_user -d kgnapp_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  kgn_postgres_data:

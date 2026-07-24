@@ -1,21 +1,24 @@
-import 'module-alias/register';
+import './bootstrap-aliases';
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import { router } from "@/routes";
 import { authMiddleware } from "./middleware/Auth";
+import { setupSwagger } from "./swagger";
 dotenv.config();
 
 const app = express();
 
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175', 'https://main.dldx21wm9ykkk.amplifyapp.com', 'https://constructiongroupofcompanies.com','https://panel.constructiongroupofcompanies.com'],
+  origin: ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175', 'https://main.dldx21wm9ykkk.amplifyapp.com', 'https://constructiongroupofcompanies.com', 'https://panel.constructiongroupofcompanies.com', 'https://constructiongroup.netlify.app'],
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
   credentials: true, // allow cookies/auth headers if needed
 }));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+setupSwagger(app);
 
 // Routes
 

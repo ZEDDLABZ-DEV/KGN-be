@@ -1,6 +1,6 @@
 import { AuthRequest } from '@/middleware/Auth';
 import { error, prisma, success } from '@/Utils';
-import { getSignedDownloadUrl } from '@/Utils/aws';
+import { getS3KeyPrefix, getSignedDownloadUrl } from '@/Utils/aws';
 import { Response } from 'express';
 import logger from '@/config/logger';
 import AWS from 'aws-sdk';
@@ -26,7 +26,7 @@ const sanitizeFileName = (fileName: string): string => {
 // Upload file to construction-docs bucket
 const uploadToProjectDocs = async (file: Express.Multer.File): Promise<string> => {
   const sanitizedName = sanitizeFileName(file.originalname);
-  const fileKey = `${FOLDER_NAME}/${uuidv4()}_${sanitizedName}`;
+  const fileKey = `${getS3KeyPrefix()}${FOLDER_NAME}/${uuidv4()}_${sanitizedName}`;
 
   const params = {
     Bucket: BUCKET_NAME,
