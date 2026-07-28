@@ -23,7 +23,7 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
       // Procurement pipeline
       pendingMRs,
       approvedMRs,
-      draftPOs,
+      approvedPOs,
       sentPOs,
       totalPOAmount,
       pendingGRNs,
@@ -54,14 +54,14 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
       // ── Procurement Pipeline ──
       prisma.materialRequest.count({ where: { status: 'PENDING' } }),
       prisma.materialRequest.count({ where: { status: 'APPROVED' } }),
-      prisma.purchaseOrder.count({ where: { status: 'DRAFT' } }),
-      prisma.purchaseOrder.count({ where: { status: { in: ['SENT', 'APPROVED'] } } }),
+      prisma.purchaseOrder.count({ where: { status: 'APPROVED' } }),
+      prisma.purchaseOrder.count({ where: { status: 'SENT' } }),
       prisma.purchaseOrder.aggregate({ _sum: { totalAmount: true } }),
       prisma.gRN.count({ where: { status: 'PENDING' } }),
       prisma.gRN.count({ where: { status: 'COMPLETED' } }),
 
       // ── Inventory ──
-      prisma.inventory.count(),
+      prisma.inventoryItem.count(),
 
       // ── Recent Projects (latest 5) ──
       prisma.projects.findMany({
@@ -100,15 +100,6 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
       }),
     ]);
 
-    // Low stock (separate query because of comparison logic)
-    const lowStockItems = await prisma.inventory.findMany({
-      where: { minimumQuantity: { not: null } },
-      select: { id: true, itemName: true, quantity: true, minimumQuantity: true, unit: true },
-    });
-    const lowStock = lowStockItems.filter(
-      (item) => item.minimumQuantity !== null && item.quantity <= item.minimumQuantity
-    );
-
     const stats = {
       // ── Overview Cards ──
       overview: {
@@ -125,8 +116,8 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
         pipeline: {
           pendingApproval: pendingMRs,
           awaitingPO: approvedMRs,
+          awaitingDispatch: approvedPOs,
           awaitingDelivery: sentPOs,
-          draftPOs: draftPOs,
           awaitingInspection: pendingGRNs,
           completedGRNs: completedGRNs,
         },
@@ -136,8 +127,6 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
       // ── Inventory ──
       inventory: {
         totalItems: totalInventoryItems,
-        lowStockCount: lowStock.length,
-        lowStockItems: lowStock.slice(0, 5), // top 5 for quick view
       },
 
       // ── Recent Projects ──
@@ -191,8 +180,7 @@ export const getProjectDashboardStats = async (req: AuthRequest, res: Response) 
       tasksByPriority,
       mrByStatus,
       purchaseOrders,
-      inventoryItems,
-      lowStockItems,
+      inventoryItemIds,
       boqCount,
       filesCount,
       recentTasks,
@@ -219,10 +207,10 @@ export const getProjectDashboardStats = async (req: AuthRequest, res: Response) 
         where: { materialRequest: { projectId: pid } },
         select: { status: true, totalAmount: true },
       }),
-      prisma.inventory.count({ where: { projectId: pid } }),
-      prisma.inventory.findMany({
-        where: { projectId: pid, minimumQuantity: { not: null } },
-        select: { id: true, itemName: true, quantity: true, minimumQuantity: true, unit: true },
+      prisma.stockMovement.findMany({
+        where: { projectId: pid },
+        select: { inventoryItemId: true },
+        distinct: ['inventoryItemId'],
       }),
       prisma.bOQ.count({ where: { projectId: pid } }),
       prisma.projectFiles.count({ where: { projectId: pid } }),
@@ -252,10 +240,6 @@ export const getProjectDashboardStats = async (req: AuthRequest, res: Response) 
     purchaseOrders.forEach((po) => {
       poByStatus[po.status] = (poByStatus[po.status] || 0) + 1;
     });
-
-    const lowStock = lowStockItems.filter(
-      (item) => item.minimumQuantity !== null && item.quantity <= item.minimumQuantity
-    );
 
     // Time progress
     const start = new Date(project.startDate);
@@ -309,9 +293,7 @@ export const getProjectDashboardStats = async (req: AuthRequest, res: Response) 
         },
       },
       inventory: {
-        totalItems: inventoryItems,
-        lowStockCount: lowStock.length,
-        lowStockItems: lowStock.slice(0, 5),
+        totalItems: inventoryItemIds.length,
       },
       boqs: boqCount,
       files: filesCount,
@@ -382,17 +364,18 @@ export const getRecentActivity = async (req: AuthRequest, res: Response) => {
             updatedAt: true,
           },
         }),
-        prisma.inventoryTransaction.findMany({
+        prisma.stockMovement.findMany({
           take,
           orderBy: { createdAt: 'desc' },
           select: {
             id: true,
-            transactionType: true,
+            type: true,
             quantity: true,
-            reference: true,
-            remarks: true,
+            referenceType: true,
+            referenceId: true,
+            notes: true,
             createdAt: true,
-            inventory: { select: { id: true, itemName: true, unit: true } },
+            inventoryItem: { select: { id: true, name: true, unit: true } },
           },
         }),
       ]);
@@ -431,15 +414,15 @@ export const getRecentActivity = async (req: AuthRequest, res: Response) => {
         receivedBy: grn.receivedBy,
         date: grn.updatedAt,
       })),
-      ...recentInventory.map((inv) => ({
+      ...recentInventory.map((movement) => ({
         type: 'INVENTORY',
-        id: inv.id,
-        title: inv.inventory.itemName,
-        transactionType: inv.transactionType,
-        quantity: inv.quantity,
-        unit: inv.inventory.unit,
-        reference: inv.reference,
-        date: inv.createdAt,
+        id: movement.id,
+        title: movement.inventoryItem.name,
+        movementType: movement.type,
+        quantity: movement.quantity,
+        unit: movement.inventoryItem.unit,
+        reference: `${movement.referenceType}:${movement.referenceId}`,
+        date: movement.createdAt,
       })),
     ];
 

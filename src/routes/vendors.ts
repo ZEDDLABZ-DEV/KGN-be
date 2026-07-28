@@ -1,10 +1,12 @@
 import { Router } from 'express';
+import { authorize } from '@/middleware/Permissions';
 import {
   createVendor,
   getAllVendors,
   getVendorById,
   updateVendor,
   updateVendorStatus,
+  updateVendorApprovalStatus,
   deleteVendor,
   getVendorStats,
   getActiveVendors,
@@ -32,6 +34,9 @@ router.put('/:id', updateVendor);
 
 // Update vendor status
 router.patch('/:id/status', updateVendorStatus);
+
+// Update vendor approval status (admin only)
+router.patch('/:id/approval-status', authorize(['manage_vendors']), updateVendorApprovalStatus);
 
 // Delete vendor
 router.delete('/:id', deleteVendor);

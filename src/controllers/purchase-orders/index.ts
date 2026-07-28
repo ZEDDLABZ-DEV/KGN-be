@@ -3,16 +3,15 @@ import { created, error, prisma, success } from '@/Utils';
 import { Response } from 'express';
 import logger from '@/config/logger';
 
-// Generate unique PO number
+// Generate unique PO number: PO-{YY}{MM}-{sequence}, sequence resets every calendar month
 const generatePONumber = async (): Promise<string> => {
   const date = new Date();
   const year = date.getFullYear().toString().slice(-2);
   const month = (date.getMonth() + 1).toString().padStart(2, '0');
-  
-  // Get count of POs this month
+
   const startOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
-  const endOfMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0);
-  
+  const endOfMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999);
+
   const count = await prisma.purchaseOrder.count({
     where: {
       createdAt: {
@@ -21,41 +20,64 @@ const generatePONumber = async (): Promise<string> => {
       },
     },
   });
-  
+
   const sequence = (count + 1).toString().padStart(4, '0');
   return `PO-${year}${month}-${sequence}`;
 };
 
-// Create purchase order from material request
+const poDetailInclude = {
+  items: true,
+  vendor: true,
+  materialRequest: {
+    include: {
+      project: {
+        select: {
+          id: true,
+          name: true,
+          projectId: true,
+          location: true,
+        },
+      },
+    },
+  },
+} as const;
+
+// Create purchase order from an approved material request.
+// POs have no draft/pending stage — they are created directly as APPROVED.
 export const createPurchaseOrder = async (req: AuthRequest, res: Response) => {
   try {
-    const { materialRequestId, vendorId, vendorName, vendorContact, vendorEmail, vendorAddress, notes, expectedDelivery, items } = req.body;
+    const {
+      materialRequestId,
+      vendorId,
+      vendorName,
+      vendorContact,
+      vendorEmail,
+      vendorAddress,
+      notes,
+      expectedDelivery,
+      items,
+    } = req.body;
 
     if (!materialRequestId) {
       return error(res, 'Material request ID is required', 400);
     }
 
-    // Validate vendor - either vendorId or vendorName must be provided
     if (!vendorId && !vendorName) {
-      return error(res, 'Either vendorId or vendor details are required', 400);
+      return error(res, 'Either vendorId or vendorName (with vendor details) is required', 400);
     }
 
-    // If vendorId is provided, verify vendor exists
     if (vendorId) {
-      const vendor = await prisma.vendor.findUnique({
-        where: { id: vendorId },
-      });
+      const vendor = await prisma.vendor.findUnique({ where: { id: vendorId } });
 
       if (!vendor) {
         return error(res, 'Vendor not found', 404);
       }
 
-      if (vendor.status !== 'ACTIVE') {
-        return error(res, 'Vendor is not active', 400);
+      if (vendor.status !== 'ACTIVE' || vendor.approvalStatus !== 'APPROVED') {
+        return error(res, 'Vendor must be ACTIVE and APPROVED to be used on a purchase order', 400);
       }
     }
 
-    // Get material request with items
     const materialRequest = await prisma.materialRequest.findUnique({
       where: { id: materialRequestId },
       include: { items: true },
@@ -65,24 +87,29 @@ export const createPurchaseOrder = async (req: AuthRequest, res: Response) => {
       return error(res, 'Material request not found', 404);
     }
 
-    // Generate PO number
-    const poNumber = await generatePONumber();
+    let poItems: {
+      itemName: string;
+      description?: string | null;
+      quantity: number;
+      unit: string;
+      unitPrice: number;
+      totalPrice: number;
+    }[] = [];
 
-    // If items are provided, use them; otherwise create from material request items
-    let poItems: any[] = [];
-    
     if (items && Array.isArray(items) && items.length > 0) {
-      // Use provided items with unit prices
-      poItems = items.map((item: any) => ({
-        itemName: item.itemName,
-        description: item.description,
-        quantity: item.quantity,
-        unit: item.unit,
-        unitPrice: item.unitPrice || 0,
-        totalPrice: (item.quantity || 0) * (item.unitPrice || 0),
-      }));
+      poItems = items.map((item: any) => {
+        const quantity = parseFloat(item.quantity) || 0;
+        const unitPrice = parseFloat(item.unitPrice) || 0;
+        return {
+          itemName: item.itemName,
+          description: item.description,
+          quantity,
+          unit: item.unit,
+          unitPrice,
+          totalPrice: quantity * unitPrice,
+        };
+      });
     } else {
-      // Create items from material request items
       poItems = materialRequest.items.map((item) => ({
         itemName: item.itemName,
         description: item.remarks,
@@ -93,49 +120,35 @@ export const createPurchaseOrder = async (req: AuthRequest, res: Response) => {
       }));
     }
 
-    // Calculate total amount
     const totalAmount = poItems.reduce((sum, item) => sum + item.totalPrice, 0);
+    const poNumber = await generatePONumber();
 
-    // Create purchase order with items
-    const purchaseOrder = await prisma.purchaseOrder.create({
-      data: {
-        poNumber,
-        materialRequestId,
-        vendorId: vendorId || null,
-        vendorName: vendorId ? null : vendorName,
-        vendorContact: vendorId ? null : vendorContact,
-        vendorEmail: vendorId ? null : vendorEmail,
-        vendorAddress: vendorId ? null : vendorAddress,
-        notes,
-        expectedDelivery: expectedDelivery ? new Date(expectedDelivery) : null,
-        totalAmount,
-        createdById: req.userId,
-        items: {
-          create: poItems,
-        },
-      },
-      include: {
-        items: true,
-        vendor: true,
-        materialRequest: {
-          include: {
-            project: {
-              select: {
-                id: true,
-                name: true,
-                projectId: true,
-              },
-            },
+    const [purchaseOrder] = await prisma.$transaction([
+      prisma.purchaseOrder.create({
+        data: {
+          poNumber,
+          materialRequestId,
+          status: 'APPROVED',
+          vendorId: vendorId || null,
+          vendorName: vendorId ? null : vendorName,
+          vendorContact: vendorId ? null : vendorContact,
+          vendorEmail: vendorId ? null : vendorEmail,
+          vendorAddress: vendorId ? null : vendorAddress,
+          notes,
+          expectedDelivery: expectedDelivery ? new Date(expectedDelivery) : null,
+          totalAmount,
+          createdById: req.userId,
+          items: {
+            create: poItems,
           },
         },
-      },
-    });
-
-    // Update material request status to ORDERED
-    await prisma.materialRequest.update({
-      where: { id: materialRequestId },
-      data: { status: 'ORDERED' },
-    });
+        include: poDetailInclude,
+      }),
+      prisma.materialRequest.update({
+        where: { id: materialRequestId },
+        data: { status: 'ORDERED' },
+      }),
+    ]);
 
     return created(res, 'Purchase order created successfully', purchaseOrder);
   } catch (err) {
@@ -144,7 +157,7 @@ export const createPurchaseOrder = async (req: AuthRequest, res: Response) => {
   }
 };
 
-// Get all purchase orders
+// Get all purchase orders (filterable by status, vendorId, vendorName)
 export const getAllPurchaseOrders = async (req: AuthRequest, res: Response) => {
   try {
     const { status, vendorName, vendorId } = req.query;
@@ -161,43 +174,15 @@ export const getAllPurchaseOrders = async (req: AuthRequest, res: Response) => {
 
     if (vendorName) {
       where.OR = [
-        {
-          vendorName: {
-            contains: vendorName as string,
-            mode: 'insensitive',
-          },
-        },
-        {
-          vendor: {
-            name: {
-              contains: vendorName as string,
-              mode: 'insensitive',
-            },
-          },
-        },
+        { vendorName: { contains: vendorName as string, mode: 'insensitive' } },
+        { vendor: { name: { contains: vendorName as string, mode: 'insensitive' } } },
       ];
     }
 
     const purchaseOrders = await prisma.purchaseOrder.findMany({
       where,
-      include: {
-        items: true,
-        vendor: true,
-        materialRequest: {
-          include: {
-            project: {
-              select: {
-                id: true,
-                name: true,
-                projectId: true,
-              },
-            },
-          },
-        },
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
+      include: poDetailInclude,
+      orderBy: { createdAt: 'desc' },
     });
 
     return success(res, 'Purchase orders fetched successfully', purchaseOrders);
@@ -207,7 +192,7 @@ export const getAllPurchaseOrders = async (req: AuthRequest, res: Response) => {
   }
 };
 
-// Get purchase order by ID
+// Get purchase order by ID — full detail including items, vendor, and MR + its project
 export const getPurchaseOrderById = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
@@ -251,12 +236,8 @@ export const getPurchaseOrdersByMaterialRequest = async (req: AuthRequest, res: 
 
     const purchaseOrders = await prisma.purchaseOrder.findMany({
       where: { materialRequestId: materialRequestId as string },
-      include: {
-        items: true,
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
+      include: { items: true },
+      orderBy: { createdAt: 'desc' },
     });
 
     return success(res, 'Purchase orders fetched successfully', purchaseOrders);
@@ -266,11 +247,11 @@ export const getPurchaseOrdersByMaterialRequest = async (req: AuthRequest, res: 
   }
 };
 
-// Update purchase order
+// Update purchase order — only allowed while status is APPROVED
 export const updatePurchaseOrder = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { vendorId, vendorName, vendorContact, vendorEmail, vendorAddress, notes, expectedDelivery, status } = req.body;
+    const { vendorId, vendorName, vendorContact, vendorEmail, vendorAddress, notes, expectedDelivery } = req.body;
 
     const existingPO = await prisma.purchaseOrder.findUnique({
       where: { id: id as string },
@@ -280,64 +261,53 @@ export const updatePurchaseOrder = async (req: AuthRequest, res: Response) => {
       return error(res, 'Purchase order not found', 404);
     }
 
-    // Only allow updates if status is DRAFT or PENDING
-    if (!['DRAFT', 'PENDING'].includes(existingPO.status)) {
-      return error(res, 'Cannot update purchase order in current status', 400);
-    }
-
-    // If vendorId is provided, verify vendor exists
-    if (vendorId) {
-      const vendor = await prisma.vendor.findUnique({
-        where: { id: vendorId },
-      });
-
-      if (!vendor) {
-        return error(res, 'Vendor not found', 404);
-      }
-
-      if (vendor.status !== 'ACTIVE') {
-        return error(res, 'Vendor is not active', 400);
-      }
+    if (existingPO.status !== 'APPROVED') {
+      return error(res, 'Purchase order can only be edited while it is APPROVED', 400);
     }
 
     const updateData: any = {};
 
     if (vendorId !== undefined) {
-      updateData.vendorId = vendorId;
-      // Clear old vendor fields if switching to vendorId
+      if (vendorId) {
+        const vendor = await prisma.vendor.findUnique({ where: { id: vendorId } });
+
+        if (!vendor) {
+          return error(res, 'Vendor not found', 404);
+        }
+
+        if (vendor.status !== 'ACTIVE' || vendor.approvalStatus !== 'APPROVED') {
+          return error(res, 'Vendor must be ACTIVE and APPROVED to be used on a purchase order', 400);
+        }
+      }
+
+      // vendorId and the free-text vendor snapshot are mutually exclusive
+      updateData.vendorId = vendorId || null;
       updateData.vendorName = null;
       updateData.vendorContact = null;
       updateData.vendorEmail = null;
       updateData.vendorAddress = null;
-    } else {
+    } else if (
+      vendorName !== undefined ||
+      vendorContact !== undefined ||
+      vendorEmail !== undefined ||
+      vendorAddress !== undefined
+    ) {
+      updateData.vendorId = null;
       if (vendorName !== undefined) updateData.vendorName = vendorName;
       if (vendorContact !== undefined) updateData.vendorContact = vendorContact;
       if (vendorEmail !== undefined) updateData.vendorEmail = vendorEmail;
       if (vendorAddress !== undefined) updateData.vendorAddress = vendorAddress;
     }
-    
+
     if (notes !== undefined) updateData.notes = notes;
-    if (expectedDelivery) updateData.expectedDelivery = new Date(expectedDelivery);
-    if (status) updateData.status = status;
+    if (expectedDelivery !== undefined) {
+      updateData.expectedDelivery = expectedDelivery ? new Date(expectedDelivery) : null;
+    }
 
     const updatedPO = await prisma.purchaseOrder.update({
       where: { id: id as string },
       data: updateData,
-      include: {
-        items: true,
-        vendor: true,
-        materialRequest: {
-          include: {
-            project: {
-              select: {
-                id: true,
-                name: true,
-                projectId: true,
-              },
-            },
-          },
-        },
-      },
+      include: poDetailInclude,
     });
 
     return success(res, 'Purchase order updated successfully', updatedPO);
@@ -347,7 +317,7 @@ export const updatePurchaseOrder = async (req: AuthRequest, res: Response) => {
   }
 };
 
-// Update purchase order status
+// Update purchase order status. RECEIVED cascades the parent MR to DELIVERED.
 export const updatePurchaseOrderStatus = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
@@ -357,7 +327,7 @@ export const updatePurchaseOrderStatus = async (req: AuthRequest, res: Response)
       return error(res, 'Status is required', 400);
     }
 
-    const validStatuses = ['DRAFT', 'PENDING', 'APPROVED', 'SENT', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CANCELLED'];
+    const validStatuses = ['APPROVED', 'SENT', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CANCELLED'];
 
     if (!validStatuses.includes(status)) {
       return error(res, 'Invalid status', 400);
@@ -374,13 +344,9 @@ export const updatePurchaseOrderStatus = async (req: AuthRequest, res: Response)
     const updatedPO = await prisma.purchaseOrder.update({
       where: { id: id as string },
       data: { status },
-      include: {
-        items: true,
-        materialRequest: true,
-      },
+      include: { items: true, materialRequest: true },
     });
 
-    // If PO is received, update material request status to DELIVERED
     if (status === 'RECEIVED') {
       await prisma.materialRequest.update({
         where: { id: updatedPO.materialRequestId },
@@ -395,7 +361,7 @@ export const updatePurchaseOrderStatus = async (req: AuthRequest, res: Response)
   }
 };
 
-// Delete purchase order
+// Delete purchase order — only allowed while it has not been sent yet (status APPROVED)
 export const deletePurchaseOrder = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
@@ -408,14 +374,11 @@ export const deletePurchaseOrder = async (req: AuthRequest, res: Response) => {
       return error(res, 'Purchase order not found', 404);
     }
 
-    // Only allow deletion if status is DRAFT
-    if (existingPO.status !== 'DRAFT') {
-      return error(res, 'Only draft purchase orders can be deleted', 400);
+    if (existingPO.status !== 'APPROVED') {
+      return error(res, 'Only purchase orders that have not been sent yet can be deleted', 400);
     }
 
-    await prisma.purchaseOrder.delete({
-      where: { id: id as string },
-    });
+    await prisma.purchaseOrder.delete({ where: { id: id as string } });
 
     return success(res, 'Purchase order deleted successfully');
   } catch (err) {
@@ -424,7 +387,7 @@ export const deletePurchaseOrder = async (req: AuthRequest, res: Response) => {
   }
 };
 
-// Add item to purchase order
+// Add item to purchase order — only allowed while status is APPROVED
 export const addItemToPurchaseOrder = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
@@ -442,31 +405,29 @@ export const addItemToPurchaseOrder = async (req: AuthRequest, res: Response) =>
       return error(res, 'Purchase order not found', 404);
     }
 
-    if (!['DRAFT', 'PENDING'].includes(existingPO.status)) {
-      return error(res, 'Cannot add items to purchase order in current status', 400);
+    if (existingPO.status !== 'APPROVED') {
+      return error(res, 'Items can only be added while the purchase order is APPROVED', 400);
     }
 
-    const totalPrice = quantity * unitPrice;
+    const totalPrice = parseFloat(quantity) * parseFloat(unitPrice);
 
-    const newItem = await prisma.purchaseOrderItem.create({
-      data: {
-        purchaseOrderId: id as string,
-        itemName,
-        description,
-        quantity,
-        unit,
-        unitPrice,
-        totalPrice,
-      },
-    });
-
-    // Update total amount
-    await prisma.purchaseOrder.update({
-      where: { id: id as string },
-      data: {
-        totalAmount: existingPO.totalAmount + totalPrice,
-      },
-    });
+    const [newItem] = await prisma.$transaction([
+      prisma.purchaseOrderItem.create({
+        data: {
+          purchaseOrderId: id as string,
+          itemName,
+          description,
+          quantity: parseFloat(quantity),
+          unit,
+          unitPrice: parseFloat(unitPrice),
+          totalPrice,
+        },
+      }),
+      prisma.purchaseOrder.update({
+        where: { id: id as string },
+        data: { totalAmount: existingPO.totalAmount + totalPrice },
+      }),
+    ]);
 
     return created(res, 'Item added successfully', newItem);
   } catch (err) {
@@ -475,7 +436,7 @@ export const addItemToPurchaseOrder = async (req: AuthRequest, res: Response) =>
   }
 };
 
-// Update purchase order item
+// Update purchase order item — only allowed while the parent PO status is APPROVED
 export const updatePurchaseOrderItem = async (req: AuthRequest, res: Response) => {
   try {
     const { itemId } = req.params;
@@ -490,43 +451,38 @@ export const updatePurchaseOrderItem = async (req: AuthRequest, res: Response) =
       return error(res, 'Item not found', 404);
     }
 
-    if (!['DRAFT', 'PENDING'].includes(existingItem.purchaseOrder.status)) {
-      return error(res, 'Cannot update items in purchase order with current status', 400);
+    if (existingItem.purchaseOrder.status !== 'APPROVED') {
+      return error(res, 'Items can only be updated while the purchase order is APPROVED', 400);
     }
 
     const updateData: any = {};
-    let newTotalPrice = existingItem.totalPrice;
 
     if (itemName) updateData.itemName = itemName;
     if (description !== undefined) updateData.description = description;
     if (unit) updateData.unit = unit;
 
-    // Recalculate total price if quantity or unit price changes
-    const newQuantity = quantity !== undefined ? quantity : existingItem.quantity;
-    const newUnitPrice = unitPrice !== undefined ? unitPrice : existingItem.unitPrice;
-    
+    const newQuantity = quantity !== undefined ? parseFloat(quantity) : existingItem.quantity;
+    const newUnitPrice = unitPrice !== undefined ? parseFloat(unitPrice) : existingItem.unitPrice;
+    const newTotalPrice = newQuantity * newUnitPrice;
+
     if (quantity !== undefined || unitPrice !== undefined) {
-      newTotalPrice = newQuantity * newUnitPrice;
       updateData.quantity = newQuantity;
       updateData.unitPrice = newUnitPrice;
       updateData.totalPrice = newTotalPrice;
     }
 
-    const updatedItem = await prisma.purchaseOrderItem.update({
-      where: { id: itemId as string },
-      data: updateData,
-    });
-
-    // Update purchase order total amount
     const priceDifference = newTotalPrice - existingItem.totalPrice;
-    if (priceDifference !== 0) {
-      await prisma.purchaseOrder.update({
+
+    const [updatedItem] = await prisma.$transaction([
+      prisma.purchaseOrderItem.update({
+        where: { id: itemId as string },
+        data: updateData,
+      }),
+      prisma.purchaseOrder.update({
         where: { id: existingItem.purchaseOrderId },
-        data: {
-          totalAmount: existingItem.purchaseOrder.totalAmount + priceDifference,
-        },
-      });
-    }
+        data: { totalAmount: existingItem.purchaseOrder.totalAmount + priceDifference },
+      }),
+    ]);
 
     return success(res, 'Item updated successfully', updatedItem);
   } catch (err) {
@@ -535,7 +491,7 @@ export const updatePurchaseOrderItem = async (req: AuthRequest, res: Response) =
   }
 };
 
-// Delete purchase order item
+// Delete purchase order item — only allowed while the parent PO status is APPROVED
 export const deletePurchaseOrderItem = async (req: AuthRequest, res: Response) => {
   try {
     const { itemId } = req.params;
@@ -549,21 +505,17 @@ export const deletePurchaseOrderItem = async (req: AuthRequest, res: Response) =
       return error(res, 'Item not found', 404);
     }
 
-    if (!['DRAFT', 'PENDING'].includes(existingItem.purchaseOrder.status)) {
-      return error(res, 'Cannot delete items from purchase order with current status', 400);
+    if (existingItem.purchaseOrder.status !== 'APPROVED') {
+      return error(res, 'Items can only be removed while the purchase order is APPROVED', 400);
     }
 
-    await prisma.purchaseOrderItem.delete({
-      where: { id: itemId as string },
-    });
-
-    // Update purchase order total amount
-    await prisma.purchaseOrder.update({
-      where: { id: existingItem.purchaseOrderId },
-      data: {
-        totalAmount: existingItem.purchaseOrder.totalAmount - existingItem.totalPrice,
-      },
-    });
+    await prisma.$transaction([
+      prisma.purchaseOrderItem.delete({ where: { id: itemId as string } }),
+      prisma.purchaseOrder.update({
+        where: { id: existingItem.purchaseOrderId },
+        data: { totalAmount: existingItem.purchaseOrder.totalAmount - existingItem.totalPrice },
+      }),
+    ]);
 
     return success(res, 'Item deleted successfully');
   } catch (err) {
@@ -571,4 +523,3 @@ export const deletePurchaseOrderItem = async (req: AuthRequest, res: Response) =
     return error(res, 'Failed to delete item', 500);
   }
 };
-

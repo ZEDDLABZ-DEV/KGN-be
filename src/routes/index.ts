@@ -15,6 +15,7 @@ import vendorRouter from "./vendors";
 import inventoryRouter from "./inventory";
 import dashboardRouter from "./dashboard";
 import { attendanceRouter } from "./attendance";
+import { unitRouter } from "./units";
 
 export const router = Router();
 
@@ -34,3 +35,4 @@ router.use("/vendors", vendorRouter);
 router.use("/inventory", inventoryRouter);
 router.use("/dashboard", dashboardRouter);
 router.use("/attendance", attendanceRouter);
+router.use("/units", unitRouter);

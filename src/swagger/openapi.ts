@@ -59,6 +59,7 @@ export const openApiSpec = {
     { name: 'GRN' },
     { name: 'Vendors' },
     { name: 'Inventory' },
+    { name: 'Units' },
     { name: 'Dashboard' },
     { name: 'Attendance' },
   ],
@@ -331,7 +332,7 @@ export const openApiSpec = {
       },
       CreateGRNRequest: {
         type: 'object',
-        required: ['purchaseOrderId'],
+        required: ['purchaseOrderId', 'receivedBy', 'items'],
         properties: {
           purchaseOrderId: { type: 'string' },
           receivedBy: { type: 'string' },
@@ -341,9 +342,11 @@ export const openApiSpec = {
             type: 'array',
             items: {
               type: 'object',
+              required: ['purchaseOrderItemId', 'receivedQuantity'],
               properties: {
                 purchaseOrderItemId: { type: 'string' },
                 receivedQuantity: { type: 'number' },
+                damagedQuantity: { type: 'number' },
                 remarks: { type: 'string' },
               },
             },
@@ -368,28 +371,35 @@ export const openApiSpec = {
           notes: { type: 'string' },
         },
       },
-      CreateInventoryRequest: {
+      VendorApprovalStatusUpdate: {
         type: 'object',
-        required: ['itemName', 'unit', 'quantity'],
+        required: ['approvalStatus'],
         properties: {
-          itemName: { type: 'string' },
-          description: { type: 'string' },
-          category: { type: 'string' },
-          unit: { type: 'string' },
-          quantity: { type: 'number' },
-          minimumQuantity: { type: 'number' },
-          location: { type: 'string' },
-          projectId: { type: 'string' },
-          remarks: { type: 'string' },
+          approvalStatus: { type: 'string', enum: ['PENDING', 'APPROVED', 'REJECTED'] },
         },
       },
-      AdjustInventoryRequest: {
+      IssueStockRequest: {
         type: 'object',
-        required: ['transactionType', 'quantity'],
+        required: ['projectId', 'inventoryItemId', 'quantity'],
         properties: {
-          transactionType: { type: 'string', enum: ['ADD', 'SUBTRACT', 'ADJUST'] },
+          projectId: { type: 'string' },
+          inventoryItemId: { type: 'string' },
           quantity: { type: 'number' },
-          remarks: { type: 'string' },
+          notes: { type: 'string' },
+        },
+      },
+      CreateUnitRequest: {
+        type: 'object',
+        required: ['name'],
+        properties: {
+          name: { type: 'string' },
+        },
+      },
+      UnitStatusUpdate: {
+        type: 'object',
+        required: ['status'],
+        properties: {
+          status: { type: 'string', enum: ['ACTIVE', 'INACTIVE'] },
         },
       },
       DeleteFilesRequest: {
@@ -1141,7 +1151,9 @@ export const openApiSpec = {
   '/v1/api/purchase-orders': {
     post: {
       tags: ['Purchase Orders'],
-      summary: 'Create purchase order from material request',
+      summary: 'Create purchase order from an approved material request',
+      description:
+        'Admin only. POs have no draft stage — they are created directly as APPROVED. Flips the material request status to ORDERED.',
       security: bearerAuth,
       requestBody: {
         required: true,
@@ -1152,7 +1164,13 @@ export const openApiSpec = {
     get: {
       tags: ['Purchase Orders'],
       summary: 'Get all purchase orders',
+      description: 'Optional filters: status, vendorId, vendorName',
       security: bearerAuth,
+      parameters: [
+        { name: 'status', in: 'query', schema: { type: 'string' } },
+        { name: 'vendorId', in: 'query', schema: { type: 'string' } },
+        { name: 'vendorName', in: 'query', schema: { type: 'string' } },
+      ],
       responses: { 200: { description: 'Purchase orders list' } },
     },
   },
@@ -1176,6 +1194,7 @@ export const openApiSpec = {
     put: {
       tags: ['Purchase Orders'],
       summary: 'Update purchase order',
+      description: 'Admin only. Only allowed while the PO status is APPROVED.',
       security: bearerAuth,
       parameters: [idParam],
       requestBody: { content: { 'application/json': { schema: { type: 'object' } } } },
@@ -1184,6 +1203,7 @@ export const openApiSpec = {
     delete: {
       tags: ['Purchase Orders'],
       summary: 'Delete purchase order',
+      description: 'Admin only. Only purchase orders that have not been sent yet (status APPROVED) can be deleted.',
       security: bearerAuth,
       parameters: [idParam],
       responses: { 200: { description: 'Purchase order deleted' } },
@@ -1193,6 +1213,8 @@ export const openApiSpec = {
     patch: {
       tags: ['Purchase Orders'],
       summary: 'Update purchase order status',
+      description:
+        'Admin only. Valid values: APPROVED, SENT, PARTIALLY_RECEIVED, RECEIVED, CANCELLED. Setting RECEIVED cascades the parent material request status to DELIVERED.',
       security: bearerAuth,
       parameters: [idParam],
       requestBody: {
@@ -1238,6 +1260,8 @@ export const openApiSpec = {
     post: {
       tags: ['GRN'],
       summary: 'Create GRN from purchase order',
+      description:
+        'Admin or accountant. PO must be SENT, APPROVED, or PARTIALLY_RECEIVED. Immediately records stock-IN movements for each item\'s receivedQuantity (damagedQuantity never contributes to stock).',
       security: bearerAuth,
       requestBody: {
         required: true,
@@ -1269,6 +1293,8 @@ export const openApiSpec = {
     put: {
       tags: ['GRN'],
       summary: 'Update GRN',
+      description:
+        'Admin or accountant. Only while GRN status is PENDING. Replacing items reverses and re-records stock movements and recomputes the parent PO status.',
       security: bearerAuth,
       parameters: [idParam],
       requestBody: { content: { 'application/json': { schema: { type: 'object' } } } },
@@ -1277,6 +1303,8 @@ export const openApiSpec = {
     delete: {
       tags: ['GRN'],
       summary: 'Delete GRN',
+      description:
+        'Admin or accountant. Only while GRN status is PENDING or REJECTED. Reverses stock movements and recomputes the parent PO status.',
       security: bearerAuth,
       parameters: [idParam],
       responses: { 200: { description: 'GRN deleted' } },
@@ -1313,6 +1341,8 @@ export const openApiSpec = {
     patch: {
       tags: ['GRN'],
       summary: 'Update GRN status',
+      description:
+        'Admin or accountant. Valid values: PENDING, COMPLETED, PARTIALLY_RECEIVED, REJECTED. REJECTED reverses this GRN\'s stock movements and recomputes the parent PO status from the remaining valid GRNs.',
       security: bearerAuth,
       parameters: [idParam],
       requestBody: {
@@ -1399,93 +1429,132 @@ export const openApiSpec = {
       responses: { 200: { description: 'Status updated' } },
     },
   },
-  '/v1/api/inventory': {
-    get: {
-      tags: ['Inventory'],
-      summary: 'Get all inventory items',
+  '/v1/api/vendors/{id}/approval-status': {
+    patch: {
+      tags: ['Vendors'],
+      summary: 'Update vendor approval status',
+      description:
+        'Admin only. A vendor must be ACTIVE and APPROVED before it can be attached to a purchase order.',
       security: bearerAuth,
-      responses: { 200: { description: 'Inventory list' } },
-    },
-    post: {
-      tags: ['Inventory'],
-      summary: 'Create inventory item',
-      security: bearerAuth,
+      parameters: [idParam],
       requestBody: {
         required: true,
-        content: { 'application/json': { schema: { $ref: '#/components/schemas/CreateInventoryRequest' } } },
+        content: { 'application/json': { schema: { $ref: '#/components/schemas/VendorApprovalStatusUpdate' } } },
       },
-      responses: { 201: { description: 'Inventory item created' } },
+      responses: { 200: { description: 'Approval status updated' } },
     },
   },
-  '/v1/api/inventory/summary': {
+  '/v1/api/inventory/items': {
     get: {
       tags: ['Inventory'],
-      summary: 'Get inventory summary/statistics',
+      summary: 'List all inventory items',
+      description: 'Requires view_inventory (admin, accountant, or supervisor).',
       security: bearerAuth,
-      responses: { 200: { description: 'Inventory summary' } },
+      responses: { 200: { description: 'Inventory items list' } },
     },
   },
-  '/v1/api/inventory/low-stock': {
+  '/v1/api/inventory/stock/project/{projectId}': {
     get: {
       tags: ['Inventory'],
-      summary: 'Get low stock items',
-      security: bearerAuth,
-      responses: { 200: { description: 'Low stock items' } },
-    },
-  },
-  '/v1/api/inventory/project/{projectId}': {
-    get: {
-      tags: ['Inventory'],
-      summary: 'Get inventory by project',
+      summary: 'Current stock per item for a project',
+      description: 'Derived from the append-only stock movement ledger: sum(IN) - sum(OUT).',
       security: bearerAuth,
       parameters: [projectIdParam],
-      responses: { 200: { description: 'Project inventory' } },
+      responses: { 200: { description: 'Project stock levels' } },
     },
   },
-  '/v1/api/inventory/{id}': {
+  '/v1/api/inventory/stock/material/{inventoryItemId}': {
     get: {
       tags: ['Inventory'],
-      summary: 'Get inventory item by ID',
+      summary: 'Current stock for one item, broken down by project',
       security: bearerAuth,
-      parameters: [idParam],
-      responses: { 200: { description: 'Inventory item' } },
-    },
-    put: {
-      tags: ['Inventory'],
-      summary: 'Update inventory item details',
-      security: bearerAuth,
-      parameters: [idParam],
-      requestBody: { content: { 'application/json': { schema: { type: 'object' } } } },
-      responses: { 200: { description: 'Item updated' } },
-    },
-    delete: {
-      tags: ['Inventory'],
-      summary: 'Delete inventory item',
-      security: bearerAuth,
-      parameters: [idParam],
-      responses: { 200: { description: 'Item deleted' } },
+      parameters: [{ name: 'inventoryItemId', in: 'path', required: true, schema: { type: 'string' } }],
+      responses: { 200: { description: 'Material stock by project' } },
     },
   },
-  '/v1/api/inventory/{id}/transactions': {
+  '/v1/api/inventory/movements': {
     get: {
       tags: ['Inventory'],
-      summary: 'Get inventory transactions for an item',
+      summary: 'Stock movement ledger',
+      description: 'Optional filters: projectId, inventoryItemId, type (IN|OUT)',
       security: bearerAuth,
-      parameters: [idParam],
-      responses: { 200: { description: 'Transaction history' } },
+      parameters: [
+        { name: 'projectId', in: 'query', schema: { type: 'string' } },
+        { name: 'inventoryItemId', in: 'query', schema: { type: 'string' } },
+        { name: 'type', in: 'query', schema: { type: 'string', enum: ['IN', 'OUT'] } },
+      ],
+      responses: { 200: { description: 'Stock movements' } },
     },
   },
-  '/v1/api/inventory/{id}/adjust': {
+  '/v1/api/inventory/issue': {
     post: {
       tags: ['Inventory'],
-      summary: 'Adjust inventory quantity',
+      summary: 'Issue (stock out) materials against a project',
+      description:
+        'Requires issue_inventory (admin or supervisor). Rejects if quantity exceeds current project stock. Never transfers across projects.',
+      security: bearerAuth,
+      requestBody: {
+        required: true,
+        content: { 'application/json': { schema: { $ref: '#/components/schemas/IssueStockRequest' } } },
+      },
+      responses: { 201: { description: 'Stock issued' } },
+    },
+  },
+  '/v1/api/units': {
+    post: {
+      tags: ['Units'],
+      summary: 'Create unit',
+      description: 'Admin only. Name must be unique, case-insensitive.',
+      security: bearerAuth,
+      requestBody: {
+        required: true,
+        content: { 'application/json': { schema: { $ref: '#/components/schemas/CreateUnitRequest' } } },
+      },
+      responses: { 201: { description: 'Unit created' } },
+    },
+    get: {
+      tags: ['Units'],
+      summary: 'List units',
+      description: 'Any authenticated user. ?status=ACTIVE|INACTIVE|ALL, defaults to ACTIVE.',
+      security: bearerAuth,
+      parameters: [{ name: 'status', in: 'query', schema: { type: 'string', enum: ['ACTIVE', 'INACTIVE', 'ALL'] } }],
+      responses: { 200: { description: 'Units list' } },
+    },
+  },
+  '/v1/api/units/{id}': {
+    put: {
+      tags: ['Units'],
+      summary: 'Rename unit',
+      description: 'Admin only.',
       security: bearerAuth,
       parameters: [idParam],
       requestBody: {
         required: true,
-        content: { 'application/json': { schema: { $ref: '#/components/schemas/AdjustInventoryRequest' } } },
+        content: { 'application/json': { schema: { $ref: '#/components/schemas/CreateUnitRequest' } } },
       },
-      responses: { 200: { description: 'Quantity adjusted' } },
+      responses: { 200: { description: 'Unit updated' } },
+    },
+    delete: {
+      tags: ['Units'],
+      summary: 'Delete unit',
+      description: 'Admin only. Hard delete.',
+      security: bearerAuth,
+      parameters: [idParam],
+      responses: { 200: { description: 'Unit deleted' } },
+    },
+  },
+  '/v1/api/units/{id}/status': {
+    patch: {
+      tags: ['Units'],
+      summary: 'Set unit status',
+      description: 'Admin only.',
+      security: bearerAuth,
+      parameters: [idParam],
+      requestBody: {
+        required: true,
+        content: { 'application/json': { schema: { $ref: '#/components/schemas/UnitStatusUpdate' } } },
+      },
+      responses: { 200: { description: 'Status updated' } },
     },
   },
   '/v1/api/dashboard/stats': {

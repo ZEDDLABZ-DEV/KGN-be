@@ -1,47 +1,28 @@
 import { Router } from 'express';
+import { authorize } from '@/middleware/Permissions';
 import {
-  getAllInventory,
-  getInventoryById,
-  getInventoryByProject,
-  createInventoryItem,
-  updateInventoryItem,
-  adjustInventoryQuantity,
-  deleteInventoryItem,
-  getInventoryTransactions,
-  getLowStockItems,
-  getInventorySummary,
+  getAllInventoryItems,
+  getProjectStock,
+  getMaterialStock,
+  getMovements,
+  issueStock,
 } from '@/controllers/inventory';
 
-const router = Router();
+const router: any = Router();
 
-// Get all inventory items with filters
-router.get('/', getAllInventory as any);
+// List all inventory items (admin, accountant, supervisor)
+router.get('/items', authorize(['view_inventory']), getAllInventoryItems);
 
-// Get inventory summary/statistics
-router.get('/summary', getInventorySummary as any);
+// Current stock per item for a project, derived from the ledger
+router.get('/stock/project/:projectId', authorize(['view_inventory']), getProjectStock);
 
-// Get low stock items
-router.get('/low-stock', getLowStockItems as any);
+// Current stock for one item, broken down by project
+router.get('/stock/material/:inventoryItemId', authorize(['view_inventory']), getMaterialStock);
 
-// Get inventory by project
-router.get('/project/:projectId', getInventoryByProject as any);
+// Stock movement ledger (filterable by projectId, inventoryItemId, type)
+router.get('/movements', authorize(['view_inventory']), getMovements);
 
-// Get single inventory item by ID
-router.get('/:id', getInventoryById as any);
-
-// Get inventory transactions for an item
-router.get('/:id/transactions', getInventoryTransactions as any);
-
-// Create new inventory item (manual)
-router.post('/', createInventoryItem as any);
-
-// Update inventory item details (not quantity)
-router.put('/:id', updateInventoryItem as any);
-
-// Adjust inventory quantity (add/subtract/adjust)
-router.post('/:id/adjust', adjustInventoryQuantity as any);
-
-// Delete inventory item
-router.delete('/:id', deleteInventoryItem as any);
+// Issue (stock out) materials against a project (admin, supervisor)
+router.post('/issue', authorize(['issue_inventory']), issueStock);
 
 export default router;

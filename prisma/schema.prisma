@@ -82,7 +82,7 @@ model Projects {
   materialRequests MaterialRequest[]
   boqs             BOQ[]
   files            ProjectFiles[]
-  inventory        Inventory[]
+  stockMovements   StockMovement[]
   attendance       Attendance[]
 }
 
@@ -250,6 +250,7 @@ model Vendor {
   gstNumber      String?
   panNumber      String?
   status         VendorStatus    @default(ACTIVE)
+  approvalStatus VendorApprovalStatus @default(PENDING)
   rating         Float?
   notes          String?
   purchaseOrders PurchaseOrder[]
@@ -268,7 +269,7 @@ model PurchaseOrder {
   vendorContact     String?
   vendorEmail       String?
   vendorAddress     String?
-  status            PurchaseOrderStatus @default(DRAFT)
+  status            PurchaseOrderStatus @default(APPROVED)
   totalAmount       Float               @default(0)
   notes             String?
   expectedDelivery  DateTime?
@@ -323,42 +324,47 @@ model GRNItem {
   updatedAt           DateTime          @updatedAt
 }
 
-model Inventory {
-  id               String                 @id @default(cuid())
-  itemName         String
-  description      String?
-  category         String?
-  unit             String
-  quantity         Float                  @default(0)
-  minimumQuantity  Float?
-  location         String?
-  projectId        String?
-  project          Projects?              @relation(fields: [projectId], references: [id])
-  remarks          String?
-  createdAt        DateTime               @default(now())
-  updatedAt        DateTime               @updatedAt
-  transactions     InventoryTransaction[]
-
-  @@index([itemName])
-  @@index([projectId])
+// Master catalogue of materials that have ever moved through GRN/inventory.
+// Auto-created (case-insensitive match on name) the first time a GRN item with
+// that name is received.
+model InventoryItem {
+  id             String          @id @default(cuid())
+  name           String          @unique
+  unit           String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  stockMovements StockMovement[]
 }
 
-model InventoryTransaction {
-  id               String                  @id @default(cuid())
-  inventoryId      String
-  inventory        Inventory               @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
-  transactionType  InventoryTransactionType
-  quantity         Float
-  previousQuantity Float
-  newQuantity      Float
-  reference        String? // GRN number or manual entry reference
-  referenceId      String? // GRN ID or other reference ID
-  remarks          String?
-  performedBy      String?
-  createdAt        DateTime                @default(now())
+// Append-only, project-scoped stock ledger. Current stock for a project+item
+// is always derived as sum(IN) - sum(OUT) — never stored as a mutable counter.
+model StockMovement {
+  id              String        @id @default(cuid())
+  projectId       String
+  project         Projects      @relation(fields: [projectId], references: [id])
+  inventoryItemId String
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  type            MovementType
+  quantity        Float
+  referenceType   String // "GRN" | "MATERIAL_ISSUE"
+  referenceId     String? // e.g. the GRN id that generated this movement, used to reverse it later
+  unit            String?
+  notes           String? // used for MATERIAL_ISSUE
+  createdById     String? // user who triggered it
+  createdAt       DateTime      @default(now())
 
-  @@index([inventoryId])
-  @@index([referenceId])
+  @@index([projectId, inventoryItemId])
+  @@index([referenceType, referenceId])
+}
+
+// Simple admin-managed catalogue used only as dropdown suggestions for the
+// free-text `unit` fields on material/PO/GRN items — never FK'd to them.
+model Unit {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  status    Status   @default(ACTIVE)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Attendance {
@@ -432,8 +438,6 @@ enum BOQStatus {
 }
 
 enum PurchaseOrderStatus {
-  DRAFT
-  PENDING
   APPROVED
   SENT
   PARTIALLY_RECEIVED
@@ -454,18 +458,18 @@ enum VendorStatus {
   BLOCKED
 }
 
+enum VendorApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum AttendanceStatus {
   PRESENT
   ABSENT
 }
 
-enum InventoryTransactionType {
-  GRN_RECEIPT      // From GRN
-  MANUAL_ADD       // Manual addition
-  MANUAL_SUBTRACT  // Manual subtraction
-  MANUAL_ADJUST    // Manual adjustment
-  DAMAGE           // Damage/wastage
-  USAGE            // Used in project
-  RETURN           // Return to supplier
-  TRANSFER         // Transfer between projects/locations
+enum MovementType {
+  IN
+  OUT
 }

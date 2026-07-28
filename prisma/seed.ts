@@ -37,6 +37,20 @@ async function main() {
       { name: 'create_project_files' },
       { name: 'update_project_files' },
       { name: 'delete_project_files' },
+      { name: 'mark_attendance' },
+      { name: 'view_attendance' },
+      { name: 'create_purchase_orders' },
+      { name: 'update_purchase_orders' },
+      { name: 'delete_purchase_orders' },
+      { name: 'create_grn' },
+      { name: 'update_grn' },
+      { name: 'delete_grn' },
+      { name: 'view_inventory' },
+      { name: 'issue_inventory' },
+      { name: 'create_units' },
+      { name: 'update_units' },
+      { name: 'delete_units' },
+      { name: 'manage_vendors' },
     ],
     skipDuplicates: true,
   });
@@ -47,6 +61,8 @@ async function main() {
       { name: 'admin' },
       { name: 'manager' },
       { name: 'team_lead' },
+      { name: 'accountant' },
+      { name: 'supervisor' },
     ],
     skipDuplicates: true,
   });
@@ -62,6 +78,36 @@ async function main() {
       data: allPerms.map((p) => ({ roleId: adminRole.id, permissionId: p.id })),
     });
   }
+
+  // GRN mutations and inventory reads are allowed for admin OR accountant;
+  // inventory reads/issue are allowed for admin OR supervisor. Admin already
+  // has every permission above, so only wire up the non-admin roles here.
+  const grantPermissionsToRole = async (roleName: string, permissionNames: string[]) => {
+    const role = await prisma.role.findUnique({ where: { name: roleName } });
+    if (!role) return;
+
+    const perms = await prisma.permission.findMany({
+      where: { name: { in: permissionNames } },
+    });
+
+    await prisma.rolePermission.deleteMany({
+      where: { roleId: role.id, permissionId: { in: perms.map((p) => p.id) } },
+    });
+    if (perms.length > 0) {
+      await prisma.rolePermission.createMany({
+        data: perms.map((p) => ({ roleId: role.id, permissionId: p.id })),
+      });
+    }
+  };
+
+  await grantPermissionsToRole('accountant', [
+    'create_grn',
+    'update_grn',
+    'delete_grn',
+    'view_inventory',
+  ]);
+
+  await grantPermissionsToRole('supervisor', ['view_inventory', 'issue_inventory']);
 
   const hashed = await bcrypt.hash(ADMIN_PASSWORD, 10);
 

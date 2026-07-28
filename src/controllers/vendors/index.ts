@@ -300,6 +300,43 @@ export const updateVendorStatus = async (req: AuthRequest, res: Response) => {
   }
 };
 
+// Update vendor approval status (admin only) — a vendor must be ACTIVE and
+// APPROVED before it can be attached to a purchase order
+export const updateVendorApprovalStatus = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { approvalStatus } = req.body;
+
+    if (!approvalStatus) {
+      return error(res, 'Approval status is required', 400);
+    }
+
+    const validStatuses = ['PENDING', 'APPROVED', 'REJECTED'];
+
+    if (!validStatuses.includes(approvalStatus)) {
+      return error(res, 'Invalid approval status', 400);
+    }
+
+    const existingVendor = await prisma.vendor.findUnique({
+      where: { id: id as string },
+    });
+
+    if (!existingVendor) {
+      return error(res, 'Vendor not found', 404);
+    }
+
+    const updatedVendor = await prisma.vendor.update({
+      where: { id: id as string },
+      data: { approvalStatus },
+    });
+
+    return success(res, 'Vendor approval status updated successfully', updatedVendor);
+  } catch (err) {
+    logger.error(err);
+    return error(res, 'Failed to update vendor approval status', 500);
+  }
+};
+
 // Delete vendor
 export const deleteVendor = async (req: AuthRequest, res: Response) => {
   try {
@@ -458,6 +495,7 @@ export const getActiveVendors = async (req: AuthRequest, res: Response) => {
     const vendors = await prisma.vendor.findMany({
       where: {
         status: 'ACTIVE',
+        approvalStatus: 'APPROVED',
       },
       select: {
         id: true,
