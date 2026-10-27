@@ -303,23 +303,62 @@ export const getTasksCreatedByMe = async (req: AuthRequest, res: Response) => {
 };
 
 /** Replace stored S3 image URLs with short-lived signed URLs for client display. */
-const withSignedImages = <T extends { images: string[] }>(update: T): T => ({
+const withSignedImages = <T extends { images?: string[] | null }>(update: T): T => ({
   ...update,
-  images: update.images.map((url) => getSignedViewUrl(url)),
+  images: (update.images ?? []).map((url) => getSignedViewUrl(url)),
 });
+
+/** Accept ISO, YYYY-MM-DD, timestamps, and the Daily Report UI format DD/MM/YYYY. */
+const parseReportDate = (value: unknown): Date | null => {
+  if (value instanceof Date) {
+    return isNaN(value.getTime()) ? null : value;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const fromNumber = new Date(value);
+    return isNaN(fromNumber.getTime()) ? null : fromNumber;
+  }
+  if (typeof value !== 'string') return null;
+  const raw = value.trim();
+  if (!raw) return null;
+
+  const dmy = raw.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})$/);
+  if (dmy) {
+    const day = Number(dmy[1]);
+    const month = Number(dmy[2]);
+    const year = dmy[3].length === 2 ? 2000 + Number(dmy[3]) : Number(dmy[3]);
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      const parsed = new Date(Date.UTC(year, month - 1, day));
+      if (!isNaN(parsed.getTime())) return parsed;
+    }
+  }
+
+  const parsed = new Date(raw);
+  return isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const collectUploadedFiles = (req: AuthRequest): Express.Multer.File[] => {
+  if (Array.isArray(req.files)) return req.files;
+  if (req.files && typeof req.files === 'object') {
+    return Object.values(req.files).flat();
+  }
+  return req.file ? [req.file] : [];
+};
 
 // Add a daily progress report for a task
 export const addTaskUpdate = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { reportDate, progressUpdate } = req.body;
+    const reportDate = req.body?.reportDate;
+    const progressUpdateRaw = req.body?.progressUpdate;
+    const progressUpdate =
+      typeof progressUpdateRaw === 'string' ? progressUpdateRaw : progressUpdateRaw != null ? String(progressUpdateRaw) : '';
 
-    if (!reportDate || !progressUpdate || typeof progressUpdate !== 'string' || !progressUpdate.trim()) {
+    if (!reportDate || !progressUpdate.trim()) {
       return error(res, 'Missing required fields: reportDate and progressUpdate', 400);
     }
 
-    const parsedDate = new Date(reportDate);
-    if (isNaN(parsedDate.getTime())) {
+    const parsedDate = parseReportDate(reportDate);
+    if (!parsedDate) {
       return error(res, 'reportDate must be a valid date', 400);
     }
 
@@ -331,14 +370,22 @@ export const addTaskUpdate = async (req: AuthRequest, res: Response) => {
       return error(res, 'Task not found', 404);
     }
 
-    // Optional image uploads (multipart field: "images")
-    const files = (req.files as Express.Multer.File[]) || [];
+    const files = collectUploadedFiles(req);
+    if (files.length > 10) {
+      return error(res, 'Maximum 10 images allowed', 400);
+    }
     const nonImage = files.find((f) => !f.mimetype.startsWith('image/'));
     if (nonImage) {
       return error(res, `Only image files are allowed, got: ${nonImage.originalname}`, 400);
     }
 
-    const imageUrls = await Promise.all(files.map((file) => uploadToS3(file, 'task-updates')));
+    let imageUrls: string[] = [];
+    try {
+      imageUrls = await Promise.all(files.map((file) => uploadToS3(file, 'task-updates')));
+    } catch (uploadErr: any) {
+      logger.error(uploadErr);
+      return error(res, 'Failed to upload report images', 400);
+    }
 
     const update = await prisma.taskUpdate.create({
       data: {
@@ -353,6 +400,9 @@ export const addTaskUpdate = async (req: AuthRequest, res: Response) => {
     return created(res, 'Daily report added successfully', withSignedImages(update));
   } catch (err: any) {
     logger.error(err);
+    if (err?.code === 'P2022' || String(err?.message ?? '').includes('does not exist')) {
+      return error(res, 'Daily report table is missing a required column. Apply pending Prisma migrations.', 500);
+    }
     return error(res, 'Failed to add daily report', 400);
   }
 };

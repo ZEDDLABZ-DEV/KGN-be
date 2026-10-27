@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { prisma } from "@/Utils";
 import {userRouter} from "@/routes/users";
 import { authRouter } from "./auth";
 import { projectRouter } from "./project";
@@ -18,6 +19,15 @@ import { attendanceRouter } from "./attendance";
 import { unitRouter } from "./units";
 
 export const router = Router();
+
+router.get("/health", async (_req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.status(200).json({ status: "ok", database: "connected" });
+  } catch {
+    res.status(503).json({ status: "error", database: "disconnected" });
+  }
+});
 
 router.use("/users", userRouter);
 router.use("/auth", authRouter);

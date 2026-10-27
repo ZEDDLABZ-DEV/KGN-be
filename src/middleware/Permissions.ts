@@ -1,8 +1,6 @@
-import { PrismaClient } from "@prisma/client";
 import {  Response, NextFunction } from "express";
 import { AuthRequest } from "./Auth";
-
-const prisma = new PrismaClient();
+import { prisma } from "@/Utils";
 
 export const authorize =
   (requiredPermissions: string[]) =>

@@ -1,10 +1,8 @@
 import app from "./app";
 import logger from "@/config/logger";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "@/Utils";
 
-
-const prisma = new PrismaClient();
-const PORT = process.env.PORT;
+const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, async () => {
   try {

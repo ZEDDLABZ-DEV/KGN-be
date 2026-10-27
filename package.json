@@ -20,6 +20,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "seed": "ts-node prisma/seed.ts",
+    "create:admin": "ts-node scripts/create-admin.ts",
     "prisma:studio": "prisma studio",
     "microservices:dev": "nodemon microservices/server.ts",
     "microservices:build": "rimraf microservices/dist && tsc -p microservices/tsconfig.json",
